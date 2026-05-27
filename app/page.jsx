@@ -30,6 +30,7 @@ import {
 import {
   getSupabaseSession,
   isSupabaseConfigured,
+  requiresSupabaseConfig,
   signInWithPassword,
   signOut
 } from "./lib/supabase";
@@ -449,6 +450,23 @@ export default function Home() {
     setTenants(defaultTenants);
     setBills([]);
     setSelectedTenantId(1);
+  }
+
+  if (requiresSupabaseConfig && !isSupabaseConfigured) {
+    return (
+      <main className="mx-auto flex min-h-screen w-[min(620px,calc(100%_-_32px))] items-center py-8 text-[#17211c] dark:text-[#eef7f2]">
+        <section className="w-full rounded-lg border border-[#dce4dd] bg-white p-6 shadow-[0_18px_40px_rgba(28,42,35,0.09)] dark:border-[#2f4439] dark:bg-[#18231e] dark:shadow-none">
+          <p className="mb-1.5 text-[13px] font-bold uppercase text-[#b7472a] dark:text-[#ff9f87]">
+            Supabase setup missing
+          </p>
+          <h1 className="m-0 text-2xl font-bold leading-tight">Login is not enabled</h1>
+          <p className="mb-0 mt-4 text-sm font-bold leading-6 text-[#66736c] dark:text-[#b7c8bf]">
+            Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in Vercel
+            Production environment variables, then redeploy without build cache.
+          </p>
+        </section>
+      </main>
+    );
   }
 
   if (!hasCheckedSession) {

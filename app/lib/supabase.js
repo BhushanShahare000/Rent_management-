@@ -17,6 +17,8 @@ const supabaseKey = cleanEnv(
 export const isSupabaseConfigured =
   !isPlaceholder(supabaseUrl) && !isPlaceholder(supabaseKey);
 
+export const requiresSupabaseConfig = process.env.NODE_ENV === "production";
+
 export const supabase = isSupabaseConfigured
   ? createClient(supabaseUrl, supabaseKey)
   : null;
