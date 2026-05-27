@@ -4,7 +4,7 @@ This app now uses Supabase when these environment variables exist:
 
 ```env
 NEXT_PUBLIC_SUPABASE_URL=your_project_url
-NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY=your_publishable_key
+NEXT_PUBLIC_SUPABASE_ANON_KEY=your_anon_public_key
 ```
 
 If those variables are missing, the app keeps using browser `localStorage`.
@@ -14,7 +14,7 @@ If those variables are missing, the app keeps using browser `localStorage`.
 1. Open the Supabase dashboard.
 2. Create a new project.
 3. Go to Project Settings > API.
-4. Copy the project URL and publishable key.
+4. Copy the project URL and anon public key.
 5. Create `.env.local` in the project root using `.env.local.example`.
 
 ## 2. Create Tables
