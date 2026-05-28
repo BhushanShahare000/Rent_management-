@@ -1,5 +1,6 @@
 "use client";
 
+import { flushSync } from "react-dom";
 import { useEffect, useMemo, useState } from "react";
 import { AppHeader } from "./components/AppHeader";
 import { BillForm } from "./components/BillForm";
@@ -420,8 +421,10 @@ export default function Home() {
   }
 
   function printTenantHistory(tenantId) {
-    setPrintTenantId(tenantId);
-    window.setTimeout(() => window.print(), 80);
+    flushSync(() => {
+      setPrintTenantId(tenantId);
+    });
+    window.print();
   }
 
   function toggleTheme() {
