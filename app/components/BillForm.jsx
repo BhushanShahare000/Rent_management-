@@ -39,6 +39,7 @@ export function BillForm({
   selectedTenant,
   selectedTenantBills = [],
   tenantPendingBalance = 0,
+  tenantPendingRent = 0,
   totalAmount,
   usedUnit,
   whatsappUrl
@@ -247,9 +248,23 @@ export function BillForm({
           </strong>
         </div>
         <div className="grid gap-1">
+          <span className="text-xs font-bold uppercase text-[#66736c] dark:text-[#b7c8bf]">
+            Pending Rent
+          </span>
+          <strong
+            className={`text-lg ${
+              tenantPendingRent > 0
+                ? "text-[#b7472a] dark:text-[#ff9f87]"
+                : "text-[#16724f] dark:text-[#8fd8b7]"
+            }`}
+          >
+            {tenantPendingRent > 0 ? rupees(tenantPendingRent) : "₹0 (Clear)"}
+          </strong>
+        </div>
+        <div className="grid gap-1">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase text-[#66736c] dark:text-[#b7c8bf]">
-              Pending Due
+              Pending Bills
             </span>
             {tenantPendingBalance > 0 && onClearPendingDues ? (
               <button
@@ -270,14 +285,6 @@ export function BillForm({
             }`}
           >
             {tenantPendingBalance > 0 ? rupees(tenantPendingBalance) : "₹0 (Clear)"}
-          </strong>
-        </div>
-        <div className="grid gap-1">
-          <span className="text-xs font-bold uppercase text-[#66736c] dark:text-[#b7c8bf]">
-            Latest bill
-          </span>
-          <strong className="text-lg text-[#17211c] dark:text-[#eef7f2]">
-            {selectedTenantBills?.[0] ? rupees(selectedTenantBills[0].totalAmount) : rupees(0)}
           </strong>
         </div>
       </div>

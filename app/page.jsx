@@ -77,10 +77,25 @@ export default function Home() {
     [bills, selectedTenant?.id]
   );
 
+  const tenantPendingRent = useMemo(
+    () => tenantPendingBills.reduce((sum, bill) => sum + bill.baseRent, 0),
+    [tenantPendingBills]
+  );
+
   const tenantPendingBalance = useMemo(
     () => tenantPendingBills.reduce((sum, bill) => sum + bill.totalAmount, 0),
     [tenantPendingBills]
   );
+
+  const tenantDuesMap = useMemo(() => {
+    const map = {};
+    for (const bill of bills) {
+      if (!bill.paid) {
+        map[bill.tenantId] = (map[bill.tenantId] || 0) + bill.totalAmount;
+      }
+    }
+    return map;
+  }, [bills]);
 
   const message = useMemo(() => {
     return [
@@ -139,18 +154,33 @@ export default function Home() {
     [bills, collectionMonth]
   );
 
-  const monthlySummary = useMemo(
-    () =>
-      monthlyBills.reduce(
-        (summary, bill) => ({
+  const monthlySummary = useMemo(() => {
+    return monthlyBills.reduce(
+      (summary, bill) => {
+        const isPaid = bill.paid;
+        return {
           rent: summary.rent + bill.baseRent,
           electricity: summary.electricity + bill.electricityAmount,
-          total: summary.total + bill.totalAmount
-        }),
-        { rent: 0, electricity: 0, total: 0 }
-      ),
-    [monthlyBills]
-  );
+          total: summary.total + bill.totalAmount,
+          paidTotal: summary.paidTotal + (isPaid ? bill.totalAmount : 0),
+          pendingRent: summary.pendingRent + (!isPaid ? bill.baseRent : 0),
+          pendingTotal: summary.pendingTotal + (!isPaid ? bill.totalAmount : 0),
+          pendingCount: summary.pendingCount + (!isPaid ? 1 : 0),
+          paidCount: summary.paidCount + (isPaid ? 1 : 0)
+        };
+      },
+      {
+        rent: 0,
+        electricity: 0,
+        total: 0,
+        paidTotal: 0,
+        pendingRent: 0,
+        pendingTotal: 0,
+        pendingCount: 0,
+        paidCount: 0
+      }
+    );
+  }, [monthlyBills]);
 
   const allTimeTotal = useMemo(
     () => bills.reduce((total, bill) => total + bill.totalAmount, 0),
@@ -620,6 +650,7 @@ export default function Home() {
           onAddTenant={addTenant}
           onSelectTenant={setSelectedTenantId}
           selectedTenantId={selectedTenantId}
+          tenantDuesMap={tenantDuesMap}
           tenants={tenants}
         />
 
@@ -648,6 +679,7 @@ export default function Home() {
           selectedTenant={selectedTenant}
           selectedTenantBills={selectedTenantBills}
           tenantPendingBalance={tenantPendingBalance}
+          tenantPendingRent={tenantPendingRent}
           totalAmount={totalAmount}
           unitRate={UNIT_RATE}
           usedUnit={usedUnit}
