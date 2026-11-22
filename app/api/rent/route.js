@@ -57,7 +57,7 @@ async function ensureSchema(sql) {
 
     await sql`
       CREATE TABLE IF NOT EXISTS bills (
-        id SERIAL PRIMARY KEY,
+        id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
         tenant_id INT NOT NULL,
         tenant_name VARCHAR(255) NOT NULL,
         month VARCHAR(20) NOT NULL,
@@ -246,7 +246,7 @@ export async function POST(request) {
       }
 
       case "updateBill": {
-        const billId = Number(body.billId);
+        const billId = String(body.billId || "");
         const changes = body.changes || {};
 
         const [existing] = await sql`SELECT * FROM bills WHERE id = ${billId}`;
@@ -322,7 +322,7 @@ export async function POST(request) {
       }
 
       case "updateBillPaid": {
-        const billId = Number(body.billId);
+        const billId = String(body.billId || "");
         const paid = Boolean(body.paid);
 
         const [existing] = await sql`SELECT * FROM bills WHERE id = ${billId}`;
@@ -342,7 +342,7 @@ export async function POST(request) {
       }
 
       case "deleteBill": {
-        const billId = Number(body.billId);
+        const billId = String(body.billId || "");
         await sql`DELETE FROM bills WHERE id = ${billId}`;
         return NextResponse.json({ success: true });
       }
