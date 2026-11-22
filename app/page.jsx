@@ -230,6 +230,12 @@ export default function Home() {
     return () => window.removeEventListener("afterprint", resetPrintTenant);
   }, []);
 
+  function handleClearForm() {
+    setCurrentUnit("");
+    setPreviousUnit(selectedTenantLatestBill?.currentUnit ?? selectedTenant?.previousUnit ?? 0);
+    setMonth(currentMonth());
+  }
+
   async function updateTenant(changes) {
     const previousTenants = tenants;
     setTenants((current) =>
@@ -523,6 +529,7 @@ export default function Home() {
           hasCurrentUnit={hasCurrentUnit}
           month={month}
           onBaseRentChange={updateBaseRent}
+          onClearForm={handleClearForm}
           onCurrentUnitChange={setCurrentUnit}
           onDeleteTenant={() => deleteTenant(selectedTenant)}
           onMonthChange={setMonth}
