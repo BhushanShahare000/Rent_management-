@@ -1,4 +1,12 @@
-import { Calculator, MessageCircle, RotateCcw, Save, Trash2 } from "lucide-react";
+import {
+  Calculator,
+  CheckCircle2,
+  Loader2,
+  MessageCircle,
+  RotateCcw,
+  Save,
+  Trash2
+} from "lucide-react";
 import { UNIT_RATE, rupees } from "../lib/rent";
 
 const inputClass =
@@ -11,6 +19,7 @@ export function BillForm({
   currentUnitValue,
   electricityAmount,
   hasCurrentUnit,
+  isSaving = false,
   month,
   onBaseRentChange,
   onClearForm,
@@ -21,6 +30,7 @@ export function BillForm({
   onSaveBill,
   onTenantChange,
   previousUnit,
+  saveFeedback = "",
   selectedTenant,
   selectedTenantBills = [],
   totalAmount,
@@ -53,6 +63,13 @@ export function BillForm({
           </span>
         </div>
       </div>
+
+      {saveFeedback ? (
+        <div className="mb-4 flex items-center gap-2 rounded-lg bg-[#eaf5ef] p-3 text-sm font-bold text-[#0f5e3f] dark:bg-[#1b3327] dark:text-[#8fd8b7]">
+          <CheckCircle2 size={18} />
+          <span>{saveFeedback}</span>
+        </div>
+      ) : null}
 
       <div className="grid grid-cols-2 gap-3.5 max-[780px]:grid-cols-1">
         <label className={labelClass}>
@@ -188,12 +205,12 @@ export function BillForm({
       <div className="flex flex-wrap items-center gap-2.5">
         <button
           className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border-0 bg-[#17211c] px-4 font-bold text-white no-underline transition hover:-translate-y-px hover:bg-[#25352e] disabled:cursor-not-allowed disabled:opacity-50 dark:bg-[#eef7f2] dark:text-[#101713] dark:hover:bg-white max-[470px]:w-full"
-          disabled={!hasCurrentUnit}
+          disabled={!hasCurrentUnit || isSaving}
           onClick={onSaveBill}
           type="button"
         >
-          <Save size={18} />
-          Save bill
+          {isSaving ? <Loader2 size={18} className="animate-spin" /> : <Save size={18} />}
+          {isSaving ? "Saving..." : "Save bill"}
         </button>
         <a
           className="inline-flex min-h-11 cursor-pointer items-center justify-center gap-2 rounded-lg border-0 bg-[#16724f] px-4 font-bold text-white no-underline transition hover:-translate-y-px hover:bg-[#12583d] max-[470px]:w-full"

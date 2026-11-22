@@ -1,7 +1,7 @@
 "use client";
 
 import { flushSync } from "react-dom";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AppHeader } from "./components/AppHeader";
 import { BillForm } from "./components/BillForm";
 import { CollectionSummary } from "./components/CollectionSummary";
@@ -38,7 +38,7 @@ export default function Home() {
   const [selectedTenantId, setSelectedTenantId] = useState(1);
   const [month, setMonth] = useState(currentMonth());
   const [collectionMonth, setCollectionMonth] = useState(currentMonth());
-  const [previousUnit, setPreviousUnit] = useState(1480);
+  const [previousUnit, setPreviousUnit] = useState(0);
   const [currentUnit, setCurrentUnit] = useState("");
   const [baseRent, setBaseRent] = useState(2200);
   const [hasLoadedStorage, setHasLoadedStorage] = useState(false);
@@ -53,6 +53,10 @@ export default function Home() {
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
   const [isSigningIn, setIsSigningIn] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveFeedback, setSaveFeedback] = useState("");
+
+  const saveTimeoutRef = useRef(null);
 
   const selectedTenant = useMemo(
     () => tenants.find((tenant) => tenant.id === selectedTenantId) ?? tenants[0],
@@ -67,7 +71,7 @@ export default function Home() {
 
   const message = useMemo(() => {
     return [
-      `Kiraydar Bill - ${selectedTenant.name}`,
+      `Kiraydar Bill - ${selectedTenant?.name ?? "Tenant"}`,
       `Month: ${month}`,
       `Previous unit: ${previousUnit}`,
       `Current unit: ${hasCurrentUnit ? currentUnitValue : ""}`,
@@ -83,18 +87,18 @@ export default function Home() {
     hasCurrentUnit,
     month,
     previousUnit,
-    selectedTenant.name,
+    selectedTenant?.name,
     totalAmount,
     usedUnit
   ]);
 
   const whatsappUrl = useMemo(() => {
-    const cleanedPhone = selectedTenant.phone.replace(/[^\d]/g, "");
+    const cleanedPhone = (selectedTenant?.phone ?? "").replace(/[^\d]/g, "");
     const text = encodeURIComponent(message);
     return cleanedPhone
       ? `https://wa.me/${cleanedPhone}?text=${text}`
       : `https://wa.me/?text=${text}`;
-  }, [message, selectedTenant.phone]);
+  }, [message, selectedTenant?.phone]);
 
   const billsByTenant = useMemo(() => {
     return tenants.map((tenant) => ({
@@ -104,13 +108,13 @@ export default function Home() {
   }, [bills, tenants]);
 
   const selectedTenantBills = useMemo(
-    () => bills.filter((bill) => bill.tenantId === selectedTenant.id).sort(sortBills),
-    [bills, selectedTenant.id]
+    () => bills.filter((bill) => bill.tenantId === selectedTenant?.id).sort(sortBills),
+    [bills, selectedTenant?.id]
   );
 
   const selectedTenantLatestBill = useMemo(
-    () => latestBillForTenant(bills, selectedTenant.id),
-    [bills, selectedTenant.id]
+    () => (selectedTenant ? latestBillForTenant(bills, selectedTenant.id) : null),
+    [bills, selectedTenant]
   );
 
   const monthlyBills = useMemo(
@@ -171,7 +175,11 @@ export default function Home() {
           const saved = await loadRentData();
           if (saved.tenants?.length) {
             setTenants(saved.tenants);
-            setSelectedTenantId(saved.tenants[0].id);
+            const firstId = saved.tenants[0].id;
+            setSelectedTenantId(firstId);
+            const latest = latestBillForTenant(saved.bills || [], firstId);
+            setPreviousUnit(latest?.currentUnit ?? saved.tenants[0].previousUnit ?? 0);
+            setBaseRent(saved.tenants[0].baseRent ?? 2200);
           }
           if (saved.bills) {
             setBills(saved.bills);
@@ -218,11 +226,17 @@ export default function Home() {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ tenants, bills }));
   }, [bills, isDbConfigured, hasLoadedStorage, tenants]);
 
+  // Only update previous unit and base rent when changing the selected tenant!
   useEffect(() => {
-    setPreviousUnit(selectedTenantLatestBill?.currentUnit ?? selectedTenant.previousUnit);
-    setBaseRent(selectedTenant.baseRent);
+    if (!hasLoadedStorage) return;
+    const tenant = tenants.find((t) => t.id === selectedTenantId) ?? tenants[0];
+    if (!tenant) return;
+    const latestBill = latestBillForTenant(bills, tenant.id);
+    setPreviousUnit(latestBill?.currentUnit ?? tenant.previousUnit ?? 0);
+    setBaseRent(tenant.baseRent ?? 2200);
     setCurrentUnit("");
-  }, [selectedTenant, selectedTenantLatestBill]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedTenantId, hasLoadedStorage]);
 
   useEffect(() => {
     const resetPrintTenant = () => setPrintTenantId(null);
@@ -236,31 +250,39 @@ export default function Home() {
     setMonth(currentMonth());
   }
 
-  async function updateTenant(changes) {
-    const previousTenants = tenants;
-    setTenants((current) =>
-      current.map((tenant) =>
+  function updateTenant(changes) {
+    setTenants((current) => {
+      const updated = current.map((tenant) =>
         tenant.id === selectedTenantId ? { ...tenant, ...changes } : tenant
-      )
-    );
-
-    if (!isDbConfigured) return;
-
-    try {
-      const updatedTenant = await updateTenantRow(selectedTenantId, changes);
-      setTenants((current) =>
-        current.map((tenant) => (tenant.id === updatedTenant.id ? updatedTenant : tenant))
       );
-    } catch (error) {
-      setTenants(previousTenants);
-      window.alert(`Could not update kiraydar in database.\n\n${error.message}`);
-    }
+      const target = updated.find((t) => t.id === selectedTenantId);
+      if (target && isDbConfigured) {
+        if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
+        saveTimeoutRef.current = setTimeout(() => {
+          updateTenantRow(target.id, {
+            name: target.name,
+            phone: target.phone,
+            baseRent: target.baseRent,
+            previousUnit: target.previousUnit
+          }).catch((err) => {
+            console.error("Background tenant update failed:", err);
+          });
+        }, 800);
+      }
+      return updated;
+    });
   }
 
   function updateBaseRent(value) {
     const parsedValue = numberValue(value);
     setBaseRent(parsedValue);
     updateTenant({ baseRent: parsedValue });
+  }
+
+  function updatePreviousUnit(value) {
+    const parsedValue = numberValue(value);
+    setPreviousUnit(parsedValue);
+    updateTenant({ previousUnit: parsedValue });
   }
 
   async function addTenant() {
@@ -321,7 +343,19 @@ export default function Home() {
   }
 
   async function saveBill() {
-    if (!hasCurrentUnit) return;
+    if (!hasCurrentUnit) {
+      window.alert("Please enter current meter reading.");
+      return;
+    }
+
+    if (currentUnitValue < previousUnit) {
+      const confirmSave = window.confirm(
+        `Current unit (${currentUnitValue}) is less than previous unit (${previousUnit}). Do you still want to save this bill?`
+      );
+      if (!confirmSave) return;
+    }
+
+    setIsSaving(true);
 
     const bill = {
       tenantId: selectedTenant.id,
@@ -347,10 +381,13 @@ export default function Home() {
       try {
         savedBill = await createBill(bill);
         await updateTenantRow(selectedTenant.id, {
+          name: selectedTenant.name,
+          phone: selectedTenant.phone,
           baseRent,
           previousUnit: currentUnitValue
         });
       } catch (error) {
+        setIsSaving(false);
         window.alert(`Could not save bill in database.\n\n${error.message}`);
         return;
       }
@@ -366,6 +403,12 @@ export default function Home() {
     );
     setPreviousUnit(currentUnitValue);
     setCurrentUnit("");
+    setIsSaving(false);
+
+    setSaveFeedback(
+      `✓ Bill saved for ${selectedTenant.name} (${month}) - ₹${totalAmount}`
+    );
+    setTimeout(() => setSaveFeedback(""), 4500);
   }
 
   async function deleteBill(billId) {
@@ -527,16 +570,18 @@ export default function Home() {
           currentUnitValue={currentUnitValue}
           electricityAmount={electricityAmount}
           hasCurrentUnit={hasCurrentUnit}
+          isSaving={isSaving}
           month={month}
           onBaseRentChange={updateBaseRent}
           onClearForm={handleClearForm}
           onCurrentUnitChange={setCurrentUnit}
           onDeleteTenant={() => deleteTenant(selectedTenant)}
           onMonthChange={setMonth}
-          onPreviousUnitChange={setPreviousUnit}
-          onTenantChange={updateTenant}
+          onPreviousUnitChange={updatePreviousUnit}
           onSaveBill={saveBill}
+          onTenantChange={updateTenant}
           previousUnit={previousUnit}
+          saveFeedback={saveFeedback}
           selectedTenant={selectedTenant}
           selectedTenantBills={selectedTenantBills}
           totalAmount={totalAmount}
