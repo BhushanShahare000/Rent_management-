@@ -1,7 +1,9 @@
 import {
+  Calendar,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Edit2,
   MessageCircle,
   Printer,
   Settings,
@@ -17,16 +19,16 @@ const mobileLabelClass = "text-[11px] font-bold uppercase text-[#66736c] dark:te
 const mobileValueClass = "break-words text-sm font-bold text-[#17211c] dark:text-[#eef7f2]";
 
 function whatsappHistoryUrl(tenant, bills) {
-  const cleanedPhone = tenant.phone.replace(/[^\d]/g, "");
+  const cleanedPhone = (tenant.phone || "").replace(/[^\d]/g, "");
   const lines = [
     `${tenant.name} - Rent And Electricity Record`,
     ...bills.slice(0, 12).map(
       (bill) =>
         `${bill.month}: Units ${bill.usedUnit}, Electricity ${rupees(
           bill.electricityAmount
-        )}, Rent ${rupees(bill.baseRent)}, Total ${rupees(bill.totalAmount)}, ${
-          bill.paid ? "Paid" : "Pending"
-        }`
+        )}, Rent ${rupees(bill.baseRent)}, Total ${rupees(bill.totalAmount)}, Paid ${rupees(
+          bill.paidAmount || (bill.paid ? bill.totalAmount : 0)
+        )}, Balance ${rupees(bill.balance || 0)}, ${bill.paid ? "Paid" : "Pending"}`
     )
   ];
   const text = encodeURIComponent(lines.join("\n"));
@@ -36,12 +38,13 @@ function whatsappHistoryUrl(tenant, bills) {
 
 export function TenantRecords({
   billsByTenant,
-  openTenantRecordId,
   onClearTenantBills,
   onDeleteBill,
+  onEditBill,
   onPrintTenantHistory,
   onToggleBillPaid,
   onToggleTenantDetails,
+  openTenantRecordId,
   printTenantId
 }) {
   return (
@@ -72,9 +75,14 @@ export function TenantRecords({
               <div className="mb-3.5 flex items-center justify-between gap-3 max-[780px]:flex-col max-[780px]:items-start print:mb-3.5 print:border-b print:border-[#222] print:pb-2.5">
                 <div>
                   <h3 className="mb-1 text-[17px] text-[#17211c] dark:text-[#eef7f2]">{tenant.name}</h3>
-                  <p className="m-0 text-[13px] text-[#66736c] dark:text-[#b7c8bf]">
-                    {tenant.phone || "No WhatsApp number saved"}
-                  </p>
+                  <div className="flex items-center gap-3 text-[13px] text-[#66736c] dark:text-[#b7c8bf]">
+                    <span>{tenant.phone || "No WhatsApp number saved"}</span>
+                    <span>•</span>
+                    <span className="flex items-center gap-1">
+                      <Calendar size={13} />
+                      Due Day: {tenant.dueDay || 5}th
+                    </span>
+                  </div>
                 </div>
                 <div className="flex flex-wrap items-center justify-end gap-2 max-[780px]:w-full max-[780px]:flex-col max-[780px]:items-start print:hidden">
                   <span className="whitespace-nowrap rounded-full bg-[#eaf5ef] px-2.5 py-[7px] text-[13px] font-bold text-[#0f5e3f] dark:bg-[#21382f] dark:text-[#8fd8b7] max-[780px]:w-full max-[780px]:text-center">
@@ -152,32 +160,37 @@ export function TenantRecords({
                               {bill.month}
                             </h4>
                             <p className="m-0 text-[13px] text-[#66736c] dark:text-[#b7c8bf]">
-                              {bill.usedUnit} units
+                              {bill.usedUnit} units • Due: {bill.dueDate || `${bill.month}-${String(tenant.dueDay || 5).padStart(2, "0")}`}
                             </p>
                           </div>
-                          <button
-                            className={`inline-flex min-h-[34px] shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg border-0 px-2.5 text-[13px] font-bold transition hover:-translate-y-px ${
-                              bill.paid
-                                ? "bg-[#eaf5ef] text-[#0f5e3f] dark:bg-[#21382f] dark:text-[#8fd8b7]"
-                                : "bg-[#fff6e7] text-[#b67518] dark:bg-[#3a2b12] dark:text-[#f0c36d]"
-                            }`}
-                            onClick={() => onToggleBillPaid(bill.id)}
-                            type="button"
-                          >
-                            <CheckCircle2 size={16} />
-                            {bill.paid ? "Paid" : "Pending"}
-                          </button>
+                          <div className="flex items-center gap-1.5">
+                            {onEditBill ? (
+                              <button
+                                className="inline-flex min-h-[34px] cursor-pointer items-center gap-1 rounded-lg border border-[#dce4dd] bg-[#f8faf9] px-2 text-xs font-bold text-[#17211c] dark:border-[#365044] dark:bg-[#101713] dark:text-[#eef7f2]"
+                                onClick={() => onEditBill(bill)}
+                                title="Edit this bill"
+                                type="button"
+                              >
+                                <Edit2 size={13} />
+                                Edit
+                              </button>
+                            ) : null}
+                            <button
+                              className={`inline-flex min-h-[34px] shrink-0 cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg border-0 px-2.5 text-[13px] font-bold transition hover:-translate-y-px ${
+                                bill.paid
+                                  ? "bg-[#eaf5ef] text-[#0f5e3f] dark:bg-[#21382f] dark:text-[#8fd8b7]"
+                                  : "bg-[#fff6e7] text-[#b67518] dark:bg-[#3a2b12] dark:text-[#f0c36d]"
+                              }`}
+                              onClick={() => onToggleBillPaid(bill.id)}
+                              type="button"
+                            >
+                              <CheckCircle2 size={16} />
+                              {bill.paid ? "Paid" : "Pending"}
+                            </button>
+                          </div>
                         </div>
 
                         <div className="grid grid-cols-2 gap-2 max-[420px]:grid-cols-1">
-                          <div className={mobileFieldClass}>
-                            <span className={mobileLabelClass}>Previous</span>
-                            <strong className={mobileValueClass}>{bill.previousUnit}</strong>
-                          </div>
-                          <div className={mobileFieldClass}>
-                            <span className={mobileLabelClass}>Current</span>
-                            <strong className={mobileValueClass}>{bill.currentUnit}</strong>
-                          </div>
                           <div className={mobileFieldClass}>
                             <span className={mobileLabelClass}>Electricity</span>
                             <strong className={mobileValueClass}>{rupees(bill.electricityAmount)}</strong>
@@ -186,10 +199,20 @@ export function TenantRecords({
                             <span className={mobileLabelClass}>Rent</span>
                             <strong className={mobileValueClass}>{rupees(bill.baseRent)}</strong>
                           </div>
+                          <div className={mobileFieldClass}>
+                            <span className={mobileLabelClass}>Total Bill</span>
+                            <strong className={mobileValueClass}>{rupees(bill.totalAmount)}</strong>
+                          </div>
+                          <div className={mobileFieldClass}>
+                            <span className={mobileLabelClass}>Paid Physically</span>
+                            <strong className="break-words text-sm font-bold text-[#0f5e3f] dark:text-[#8fd8b7]">
+                              {rupees(bill.paidAmount || (bill.paid ? bill.totalAmount : 0))}
+                            </strong>
+                          </div>
                           <div className="grid gap-1 rounded-lg border border-[#10211c] bg-[#10211c] p-3 max-[420px]:col-auto">
-                            <span className="text-[11px] font-bold uppercase text-[#cbd9d2]">Total</span>
-                            <strong className="break-words text-lg font-bold text-white">
-                              {rupees(bill.totalAmount)}
+                            <span className="text-[11px] font-bold uppercase text-[#cbd9d2]">Remaining Balance</span>
+                            <strong className="break-words text-lg font-bold text-[#ff9f87]">
+                              {rupees(bill.balance || 0)}
                             </strong>
                           </div>
                           <button
@@ -204,17 +227,18 @@ export function TenantRecords({
                       </article>
                     ))}
                   </div>
-                  <table className="w-full min-w-[820px] border-collapse max-[700px]:hidden print:table print:min-w-0">
+                  <table className="w-full min-w-[900px] border-collapse max-[700px]:hidden print:table print:min-w-0">
                     <thead>
                       <tr>
                         {[
                           "Month",
-                          "Previous",
-                          "Current",
+                          "Due Date",
                           "Units",
                           "Electricity",
                           "Rent",
-                          "Total",
+                          "Total Bill",
+                          "Paid",
+                          "Balance",
                           "Status"
                         ].map((heading) => (
                           <th
@@ -225,20 +249,27 @@ export function TenantRecords({
                           </th>
                         ))}
                         <th className="border-b border-[#dce4dd] bg-[#f4f7f5] px-2.5 py-[11px] text-left text-xs uppercase text-[#66736c] dark:border-[#365044] dark:bg-[#1b2a23] dark:text-[#b7c8bf] print:hidden">
-                          Delete
+                          Action
                         </th>
                       </tr>
                     </thead>
                     <tbody>
                       {tenantBills.slice(0, 12).map((bill) => (
                         <tr className={bill.paid ? "bg-[#fbfefc] dark:bg-[#122018]" : "hover:bg-[#fbfcfb] dark:hover:bg-[#17231d]"} key={bill.id}>
-                          <td className="border-b border-[#dce4dd] px-2.5 py-[11px] text-sm text-[#17211c] dark:border-[#365044] dark:text-[#eef7f2] print:border print:border-[#222] print:p-[7px] print:text-xs print:text-black">{bill.month}</td>
-                          <td className="border-b border-[#dce4dd] px-2.5 py-[11px] text-sm text-[#17211c] dark:border-[#365044] dark:text-[#eef7f2] print:border print:border-[#222] print:p-[7px] print:text-xs print:text-black">{bill.previousUnit}</td>
-                          <td className="border-b border-[#dce4dd] px-2.5 py-[11px] text-sm text-[#17211c] dark:border-[#365044] dark:text-[#eef7f2] print:border print:border-[#222] print:p-[7px] print:text-xs print:text-black">{bill.currentUnit}</td>
+                          <td className="border-b border-[#dce4dd] px-2.5 py-[11px] text-sm font-bold text-[#17211c] dark:border-[#365044] dark:text-[#eef7f2] print:border print:border-[#222] print:p-[7px] print:text-xs print:text-black">{bill.month}</td>
+                          <td className="border-b border-[#dce4dd] px-2.5 py-[11px] text-sm text-[#66736c] dark:border-[#365044] dark:text-[#b7c8bf] print:border print:border-[#222] print:p-[7px] print:text-xs print:text-black">
+                            {bill.dueDate || `${bill.month}-${String(tenant.dueDay || 5).padStart(2, "0")}`}
+                          </td>
                           <td className="border-b border-[#dce4dd] px-2.5 py-[11px] text-sm text-[#17211c] dark:border-[#365044] dark:text-[#eef7f2] print:border print:border-[#222] print:p-[7px] print:text-xs print:text-black">{bill.usedUnit}</td>
                           <td className="border-b border-[#dce4dd] px-2.5 py-[11px] text-sm text-[#17211c] dark:border-[#365044] dark:text-[#eef7f2] print:border print:border-[#222] print:p-[7px] print:text-xs print:text-black">{rupees(bill.electricityAmount)}</td>
                           <td className="border-b border-[#dce4dd] px-2.5 py-[11px] text-sm text-[#17211c] dark:border-[#365044] dark:text-[#eef7f2] print:border print:border-[#222] print:p-[7px] print:text-xs print:text-black">{rupees(bill.baseRent)}</td>
-                          <td className="border-b border-[#dce4dd] px-2.5 py-[11px] text-sm text-[#17211c] dark:border-[#365044] dark:text-[#eef7f2] print:border print:border-[#222] print:p-[7px] print:text-xs print:text-black">{rupees(bill.totalAmount)}</td>
+                          <td className="border-b border-[#dce4dd] px-2.5 py-[11px] text-sm font-bold text-[#17211c] dark:border-[#365044] dark:text-[#eef7f2] print:border print:border-[#222] print:p-[7px] print:text-xs print:text-black">{rupees(bill.totalAmount)}</td>
+                          <td className="border-b border-[#dce4dd] px-2.5 py-[11px] text-sm font-bold text-[#0f5e3f] dark:border-[#365044] dark:text-[#8fd8b7] print:border print:border-[#222] print:p-[7px] print:text-xs print:text-black">
+                            {rupees(bill.paidAmount || (bill.paid ? bill.totalAmount : 0))}
+                          </td>
+                          <td className="border-b border-[#dce4dd] px-2.5 py-[11px] text-sm font-bold text-[#b7472a] dark:border-[#365044] dark:text-[#ff9f87] print:border print:border-[#222] print:p-[7px] print:text-xs print:text-black">
+                            {rupees(bill.balance || 0)}
+                          </td>
                           <td className="border-b border-[#dce4dd] px-2.5 py-[11px] text-sm text-[#17211c] dark:border-[#365044] dark:text-[#eef7f2] print:border print:border-[#222] print:p-[7px] print:text-xs print:text-black">
                             <button
                               className={`inline-flex min-h-[34px] cursor-pointer items-center gap-1.5 whitespace-nowrap rounded-lg border-0 px-2.5 text-[13px] font-bold transition hover:-translate-y-px print:hidden ${
@@ -257,14 +288,26 @@ export function TenantRecords({
                             </span>
                           </td>
                           <td className="border-b border-[#dce4dd] px-2.5 py-[11px] text-sm dark:border-[#365044] print:hidden">
-                            <button
-                              className="inline-flex h-[34px] w-[34px] cursor-pointer items-center justify-center rounded-lg border-0 bg-[#f6ece8] text-[#b7472a] transition hover:-translate-y-px dark:bg-[#3a1f18] dark:text-[#ff9f87]"
-                              onClick={() => onDeleteBill(bill.id)}
-                              title="Delete bill"
-                              type="button"
-                            >
-                              <Trash2 size={16} />
-                            </button>
+                            <div className="flex items-center gap-1">
+                              {onEditBill ? (
+                                <button
+                                  className="inline-flex h-[34px] w-[34px] cursor-pointer items-center justify-center rounded-lg border border-[#dce4dd] bg-[#f8faf9] text-[#17211c] transition hover:-translate-y-px dark:border-[#365044] dark:bg-[#101713] dark:text-[#eef7f2]"
+                                  onClick={() => onEditBill(bill)}
+                                  title="Edit bill"
+                                  type="button"
+                                >
+                                  <Edit2 size={14} />
+                                </button>
+                              ) : null}
+                              <button
+                                className="inline-flex h-[34px] w-[34px] cursor-pointer items-center justify-center rounded-lg border-0 bg-[#f6ece8] text-[#b7472a] transition hover:-translate-y-px dark:bg-[#3a1f18] dark:text-[#ff9f87]"
+                                onClick={() => onDeleteBill(bill.id)}
+                                title="Delete bill"
+                                type="button"
+                              >
+                                <Trash2 size={16} />
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))}

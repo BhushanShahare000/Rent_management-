@@ -18,6 +18,7 @@ import {
   loadRentData,
   markAllPaidForTenant,
   updateBillPaidRow,
+  updateBillRow,
   updateTenantRow
 } from "./lib/rentRepository";
 import {
@@ -42,7 +43,10 @@ export default function Home() {
   const [previousUnit, setPreviousUnit] = useState(0);
   const [currentUnit, setCurrentUnit] = useState("");
   const [baseRent, setBaseRent] = useState(2200);
+  const [paidAmount, setPaidAmount] = useState("");
   const [balance, setBalance] = useState(0);
+  const [dueDate, setDueDate] = useState("");
+  const [editingBillId, setEditingBillId] = useState(null);
   const [hasLoadedStorage, setHasLoadedStorage] = useState(false);
   const [printTenantId, setPrintTenantId] = useState(null);
   const [openTenantRecordId, setOpenTenantRecordId] = useState(null);
@@ -69,8 +73,8 @@ export default function Home() {
   const hasCurrentUnit = currentUnit.trim().length > 0;
   const usedUnit = hasCurrentUnit ? Math.max(currentUnitValue - previousUnit, 0) : 0;
   const electricityAmount = usedUnit * UNIT_RATE;
-  const balanceValue = numberValue(balance);
-  const totalAmount = baseRent + electricityAmount + balanceValue;
+  // Total bill strictly Rent + Electricity (Balance is NOT added into total amount)
+  const totalAmount = baseRent + electricityAmount;
 
   const tenantPendingBills = useMemo(
     () => bills.filter((bill) => bill.tenantId === selectedTenant?.id && !bill.paid),
@@ -83,7 +87,7 @@ export default function Home() {
   );
 
   const tenantPendingBalance = useMemo(
-    () => tenantPendingBills.reduce((sum, bill) => sum + bill.totalAmount, 0),
+    () => tenantPendingBills.reduce((sum, bill) => sum + (bill.balance || bill.totalAmount), 0),
     [tenantPendingBills]
   );
 
@@ -91,34 +95,46 @@ export default function Home() {
     const map = {};
     for (const bill of bills) {
       if (!bill.paid) {
-        map[bill.tenantId] = (map[bill.tenantId] || 0) + bill.totalAmount;
+        map[bill.tenantId] = (map[bill.tenantId] || 0) + (bill.balance || bill.totalAmount);
       }
     }
     return map;
   }, [bills]);
 
   const message = useMemo(() => {
+    const formattedDueDate =
+      dueDate || `${month}-${String(selectedTenant?.dueDay || 5).padStart(2, "0")}`;
+    const paidVal = paidAmount.trim() === "" ? 0 : numberValue(paidAmount);
+    const balVal = numberValue(balance);
+
     return [
       `Kiraydar Bill - ${selectedTenant?.name ?? "Tenant"}`,
       `Month: ${month}`,
+      `Rent Due Date: ${formattedDueDate}`,
+      `--------------------------------`,
       `Previous unit: ${previousUnit}`,
       `Current unit: ${hasCurrentUnit ? currentUnitValue : ""}`,
       `Used unit: ${usedUnit}`,
       `Electricity: ${usedUnit} x ${UNIT_RATE} = ${electricityAmount} Rs`,
       `Home rent: ${baseRent} Rs`,
-      ...(balanceValue > 0 ? [`Previous balance / dues: ${balanceValue} Rs`] : []),
-      `Total amount: ${baseRent} + ${electricityAmount}${
-        balanceValue > 0 ? ` + ${balanceValue}` : ""
-      } = ${totalAmount} Rs`
+      `Total Bill: ${totalAmount} Rs`,
+      `--------------------------------`,
+      `Amount Paid: ${paidVal} Rs`,
+      `Remaining Balance: ${balVal} Rs`,
+      `--------------------------------`,
+      balVal > 0 ? `Status: ${balVal} Rs Pending` : `Status: Paid (Clear)`
     ].join("\n");
   }, [
-    balanceValue,
+    balance,
     baseRent,
     currentUnitValue,
+    dueDate,
     electricityAmount,
     hasCurrentUnit,
     month,
+    paidAmount,
     previousUnit,
+    selectedTenant?.dueDay,
     selectedTenant?.name,
     totalAmount,
     usedUnit
@@ -158,13 +174,16 @@ export default function Home() {
     return monthlyBills.reduce(
       (summary, bill) => {
         const isPaid = bill.paid;
+        const bBalance = bill.balance ?? (isPaid ? 0 : bill.totalAmount);
+        const bPaid = bill.paidAmount ?? (isPaid ? bill.totalAmount : 0);
+
         return {
           rent: summary.rent + bill.baseRent,
           electricity: summary.electricity + bill.electricityAmount,
           total: summary.total + bill.totalAmount,
-          paidTotal: summary.paidTotal + (isPaid ? bill.totalAmount : 0),
+          paidTotal: summary.paidTotal + bPaid,
           pendingRent: summary.pendingRent + (!isPaid ? bill.baseRent : 0),
-          pendingTotal: summary.pendingTotal + (!isPaid ? bill.totalAmount : 0),
+          pendingTotal: summary.pendingTotal + bBalance,
           pendingCount: summary.pendingCount + (!isPaid ? 1 : 0),
           paidCount: summary.paidCount + (isPaid ? 1 : 0)
         };
@@ -229,8 +248,10 @@ export default function Home() {
             setBaseRent(saved.tenants[0].baseRent ?? 2200);
             const pending = (saved.bills || [])
               .filter((b) => b.tenantId === firstId && !b.paid)
-              .reduce((sum, b) => sum + b.totalAmount, 0);
+              .reduce((sum, b) => sum + (b.balance || b.totalAmount), 0);
             setBalance(pending);
+            const day = saved.tenants[0].dueDay || 5;
+            setDueDate(`${currentMonth()}-${String(day).padStart(2, "0")}`);
           }
           if (saved.bills) {
             setBills(saved.bills);
@@ -277,7 +298,7 @@ export default function Home() {
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ tenants, bills }));
   }, [bills, isDbConfigured, hasLoadedStorage, tenants]);
 
-  // Only update previous unit, base rent and pending balance when changing selected tenant
+  // When changing selected tenant, update previous unit, rent, due date and balance
   useEffect(() => {
     if (!hasLoadedStorage) return;
     const tenant = tenants.find((t) => t.id === selectedTenantId) ?? tenants[0];
@@ -286,9 +307,13 @@ export default function Home() {
     setPreviousUnit(latestBill?.currentUnit ?? tenant.previousUnit ?? 0);
     setBaseRent(tenant.baseRent ?? 2200);
     setCurrentUnit("");
+    setEditingBillId(null);
+    setPaidAmount("");
+    const day = tenant.dueDay || 5;
+    setDueDate(`${month}-${String(day).padStart(2, "0")}`);
     const pending = bills
       .filter((b) => b.tenantId === tenant.id && !b.paid)
-      .reduce((sum, b) => sum + b.totalAmount, 0);
+      .reduce((sum, b) => sum + (b.balance || b.totalAmount), 0);
     setBalance(pending);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedTenantId, hasLoadedStorage]);
@@ -301,13 +326,67 @@ export default function Home() {
 
   function handleClearForm() {
     setCurrentUnit("");
+    setEditingBillId(null);
     setPreviousUnit(selectedTenantLatestBill?.currentUnit ?? selectedTenant?.previousUnit ?? 0);
     setMonth(currentMonth());
+    const day = selectedTenant?.dueDay || 5;
+    setDueDate(`${currentMonth()}-${String(day).padStart(2, "0")}`);
+    setPaidAmount("");
     setBalance(0);
   }
 
   function handleClearBalance() {
     setBalance(0);
+    setPaidAmount(String(totalAmount));
+  }
+
+  function handlePaidAmountChange(val) {
+    setPaidAmount(val);
+    if (val.trim() === "") {
+      setBalance(totalAmount);
+    } else {
+      const p = numberValue(val);
+      setBalance(Math.max(totalAmount - p, 0));
+    }
+  }
+
+  function handleBalanceChange(val) {
+    setBalance(val);
+    if (val.trim() === "") {
+      setPaidAmount(String(totalAmount));
+    } else {
+      const b = numberValue(val);
+      setPaidAmount(String(Math.max(totalAmount - b, 0)));
+    }
+  }
+
+  function handleQuickSetPaid(mode) {
+    if (mode === "full") {
+      setPaidAmount(String(totalAmount));
+      setBalance(0);
+    } else if (mode === "unpaid") {
+      setPaidAmount("0");
+      setBalance(totalAmount);
+    }
+  }
+
+  function handleMonthChange(newMonth) {
+    setMonth(newMonth);
+    const day = selectedTenant?.dueDay || 5;
+    setDueDate(`${newMonth}-${String(day).padStart(2, "0")}`);
+  }
+
+  function handleEditBill(bill) {
+    setSelectedTenantId(bill.tenantId);
+    setMonth(bill.month);
+    setPreviousUnit(bill.previousUnit);
+    setCurrentUnit(String(bill.currentUnit));
+    setBaseRent(bill.baseRent);
+    setPaidAmount(String(bill.paidAmount || (bill.paid ? bill.totalAmount : 0)));
+    setBalance(bill.balance || 0);
+    setDueDate(bill.dueDate || "");
+    setEditingBillId(bill.id);
+    window.scrollTo({ top: 120, behavior: "smooth" });
   }
 
   async function handleClearPendingDues() {
@@ -331,7 +410,9 @@ export default function Home() {
 
     setBills((current) =>
       current.map((b) =>
-        b.tenantId === selectedTenant.id ? { ...b, paid: true } : b
+        b.tenantId === selectedTenant.id
+          ? { ...b, paid: true, balance: 0, paidAmount: b.totalAmount }
+          : b
       )
     );
     setBalance(0);
@@ -350,7 +431,8 @@ export default function Home() {
             name: target.name,
             phone: target.phone,
             baseRent: target.baseRent,
-            previousUnit: target.previousUnit
+            previousUnit: target.previousUnit,
+            dueDay: target.dueDay
           }).catch((err) => {
             console.error("Background tenant update failed:", err);
           });
@@ -378,7 +460,8 @@ export default function Home() {
       name: `Kiraydar ${nextId}`,
       phone: "",
       baseRent: 2200,
-      previousUnit: 0
+      previousUnit: 0,
+      dueDay: 5
     };
 
     if (isDbConfigured) {
@@ -444,7 +527,12 @@ export default function Home() {
 
     setIsSaving(true);
 
-    const bill = {
+    const paidVal = paidAmount.trim() === "" ? 0 : numberValue(paidAmount);
+    const balanceVal = numberValue(balance);
+    const finalDueDate =
+      dueDate || `${month}-${String(selectedTenant?.dueDay || 5).padStart(2, "0")}`;
+
+    const billPayload = {
       tenantId: selectedTenant.id,
       tenantName: selectedTenant.name,
       month,
@@ -454,49 +542,75 @@ export default function Home() {
       unitRate: UNIT_RATE,
       electricityAmount,
       baseRent,
-      balance: balanceValue,
       totalAmount,
-      paid: false
+      paidAmount: paidVal,
+      balance: balanceVal,
+      dueDate: finalDueDate,
+      paid: balanceVal <= 0
     };
 
-    let savedBill = {
-      ...bill,
-      id: crypto.randomUUID(),
-      createdAt: new Date().toISOString()
-    };
-
-    if (isDbConfigured) {
-      try {
-        savedBill = await createBill(bill);
-        await updateTenantRow(selectedTenant.id, {
-          name: selectedTenant.name,
-          phone: selectedTenant.phone,
-          baseRent,
-          previousUnit: currentUnitValue
-        });
-      } catch (error) {
-        setIsSaving(false);
-        window.alert(`Could not save bill in database.\n\n${error.message}`);
-        return;
+    if (editingBillId) {
+      // Update existing bill
+      if (isDbConfigured) {
+        try {
+          const updated = await updateBillRow(editingBillId, billPayload);
+          setBills((current) =>
+            current.map((b) => (b.id === editingBillId ? updated : b))
+          );
+        } catch (error) {
+          setIsSaving(false);
+          window.alert(`Could not update bill in database.\n\n${error.message}`);
+          return;
+        }
+      } else {
+        setBills((current) =>
+          current.map((b) => (b.id === editingBillId ? { ...b, ...billPayload } : b))
+        );
       }
+      setEditingBillId(null);
+      setCurrentUnit("");
+      setSaveFeedback(`✓ Bill updated for ${selectedTenant.name} (${month})`);
+    } else {
+      // Create new bill
+      let savedBill = {
+        ...billPayload,
+        id: crypto.randomUUID(),
+        createdAt: new Date().toISOString()
+      };
+
+      if (isDbConfigured) {
+        try {
+          savedBill = await createBill(billPayload);
+          await updateTenantRow(selectedTenant.id, {
+            name: selectedTenant.name,
+            phone: selectedTenant.phone,
+            baseRent,
+            previousUnit: currentUnitValue,
+            dueDay: selectedTenant.dueDay || 5
+          });
+        } catch (error) {
+          setIsSaving(false);
+          window.alert(`Could not save bill in database.\n\n${error.message}`);
+          return;
+        }
+      }
+
+      setBills((current) => [savedBill, ...current]);
+      setTenants((current) =>
+        current.map((tenant) =>
+          tenant.id === selectedTenant.id
+            ? { ...tenant, baseRent, previousUnit: currentUnitValue }
+            : tenant
+        )
+      );
+      setPreviousUnit(currentUnitValue);
+      setCurrentUnit("");
+      setBalance(0);
+      setPaidAmount("");
+      setSaveFeedback(`✓ Bill saved for ${selectedTenant.name} (${month}) - ₹${totalAmount}`);
     }
 
-    setBills((current) => [savedBill, ...current]);
-    setTenants((current) =>
-      current.map((tenant) =>
-        tenant.id === selectedTenant.id
-          ? { ...tenant, baseRent, previousUnit: currentUnitValue }
-          : tenant
-      )
-    );
-    setPreviousUnit(currentUnitValue);
-    setCurrentUnit("");
-    setBalance(0);
     setIsSaving(false);
-
-    setSaveFeedback(
-      `✓ Bill saved for ${selectedTenant.name} (${month}) - ₹${totalAmount}`
-    );
     setTimeout(() => setSaveFeedback(""), 4500);
   }
 
@@ -519,9 +633,11 @@ export default function Home() {
     const targetBill = bills.find((bill) => bill.id === billId);
     if (!targetBill) return;
 
+    const nextPaid = !targetBill.paid;
+
     if (isDbConfigured) {
       try {
-        const updatedBill = await updateBillPaidRow(billId, !targetBill.paid);
+        const updatedBill = await updateBillPaidRow(billId, nextPaid);
         setBills((current) =>
           current.map((bill) => (bill.id === billId ? updatedBill : bill))
         );
@@ -533,7 +649,14 @@ export default function Home() {
 
     setBills((current) =>
       current.map((bill) =>
-        bill.id === billId ? { ...bill, paid: !bill.paid } : bill
+        bill.id === billId
+          ? {
+              ...bill,
+              paid: nextPaid,
+              balance: nextPaid ? 0 : bill.totalAmount,
+              paidAmount: nextPaid ? bill.totalAmount : 0
+            }
+          : bill
       )
     );
   }
@@ -643,6 +766,8 @@ export default function Home() {
         monthlyBillsCount={monthlyBills.length}
         monthlySummary={monthlySummary}
         onCollectionMonthChange={setCollectionMonth}
+        tenantDuesMap={tenantDuesMap}
+        tenants={tenants}
       />
 
       <section className="grid grid-cols-[260px_minmax(0,1fr)_330px] gap-5 max-[1120px]:grid-cols-[230px_minmax(0,1fr)] max-[960px]:grid-cols-1 max-[470px]:gap-3 print:hidden">
@@ -659,21 +784,31 @@ export default function Home() {
           baseRent={baseRent}
           currentUnit={currentUnit}
           currentUnitValue={currentUnitValue}
+          dueDay={selectedTenant?.dueDay ?? 5}
+          dueDate={dueDate}
           electricityAmount={electricityAmount}
           hasCurrentUnit={hasCurrentUnit}
           isSaving={isSaving}
           month={month}
-          onBalanceChange={setBalance}
+          onBalanceChange={handleBalanceChange}
           onBaseRentChange={updateBaseRent}
           onClearBalance={handleClearBalance}
           onClearForm={handleClearForm}
           onClearPendingDues={handleClearPendingDues}
           onCurrentUnitChange={setCurrentUnit}
           onDeleteTenant={() => deleteTenant(selectedTenant)}
-          onMonthChange={setMonth}
+          onDueDayChange={(val) => {
+            const day = Number(val) || 5;
+            setDueDate(`${month}-${String(day).padStart(2, "0")}`);
+          }}
+          onDueDateChange={setDueDate}
+          onMonthChange={handleMonthChange}
+          onPaidAmountChange={handlePaidAmountChange}
           onPreviousUnitChange={updatePreviousUnit}
+          onQuickSetPaid={handleQuickSetPaid}
           onSaveBill={saveBill}
           onTenantChange={updateTenant}
+          paidAmount={paidAmount}
           previousUnit={previousUnit}
           saveFeedback={saveFeedback}
           selectedTenant={selectedTenant}
@@ -681,7 +816,6 @@ export default function Home() {
           tenantPendingBalance={tenantPendingBalance}
           tenantPendingRent={tenantPendingRent}
           totalAmount={totalAmount}
-          unitRate={UNIT_RATE}
           usedUnit={usedUnit}
           whatsappUrl={whatsappUrl}
         />
@@ -691,14 +825,15 @@ export default function Home() {
 
       <TenantRecords
         billsByTenant={billsByTenant}
-        openTenantRecordId={openTenantRecordId}
         onClearTenantBills={clearTenantBills}
         onDeleteBill={deleteBill}
+        onEditBill={handleEditBill}
         onPrintTenantHistory={printTenantHistory}
         onToggleBillPaid={toggleBillPaid}
         onToggleTenantDetails={(tenantId) =>
           setOpenTenantRecordId((current) => (current === tenantId ? null : tenantId))
         }
+        openTenantRecordId={openTenantRecordId}
         printTenantId={printTenantId}
       />
     </main>

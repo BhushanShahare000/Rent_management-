@@ -1,6 +1,8 @@
 import {
-  Calculator,
+  Calendar,
   CheckCircle2,
+  Clock,
+  Coins,
   Loader2,
   MessageCircle,
   RotateCcw,
@@ -8,7 +10,7 @@ import {
   Trash2,
   X
 } from "lucide-react";
-import { UNIT_RATE, rupees } from "../lib/rent";
+import { UNIT_RATE, getTenantReminder, rupees } from "../lib/rent";
 
 const inputClass =
   "min-h-[46px] w-full rounded-lg border border-[#dce4dd] bg-white px-[13px] text-[#17211c] dark:border-[#365044] dark:bg-[#101713] dark:text-[#eef7f2] dark:placeholder:text-[#718078] focus:border-[#16724f] focus:outline focus:outline-[3px] focus:outline-[rgba(22,114,79,0.14)]";
@@ -19,6 +21,8 @@ export function BillForm({
   baseRent,
   currentUnit,
   currentUnitValue,
+  dueDay = 5,
+  dueDate = "",
   electricityAmount,
   hasCurrentUnit,
   isSaving = false,
@@ -30,10 +34,15 @@ export function BillForm({
   onClearPendingDues,
   onCurrentUnitChange,
   onDeleteTenant,
+  onDueDayChange,
+  onDueDateChange,
   onMonthChange,
+  onPaidAmountChange,
   onPreviousUnitChange,
+  onQuickSetPaid,
   onSaveBill,
   onTenantChange,
+  paidAmount = 0,
   previousUnit,
   saveFeedback = "",
   selectedTenant,
@@ -46,13 +55,15 @@ export function BillForm({
 }) {
   const isUnitDecreasing = hasCurrentUnit && currentUnitValue < previousUnit;
   const balanceNum = Number(balance) || 0;
+  const paidNum = Number(paidAmount) || 0;
+  const reminder = getTenantReminder(selectedTenant, tenantPendingBalance);
 
   return (
     <section className="rounded-lg border border-[#dce4dd] bg-white p-5 shadow-[0_18px_40px_rgba(28,42,35,0.09)] dark:border-[#2f4439] dark:bg-[#18231e] dark:shadow-none max-[780px]:p-4 print:hidden">
       <div className="mb-4 flex items-center justify-between gap-[9px] max-[780px]:flex-col max-[780px]:items-start">
         <div className="flex items-center gap-[9px]">
-          <Calculator size={18} />
-          <h2 className="m-0 text-lg text-[#17211c] dark:text-[#eef7f2]">Monthly Bill</h2>
+          <Calendar size={18} className="text-[#16724f] dark:text-[#8fd8b7]" />
+          <h2 className="m-0 text-lg text-[#17211c] dark:text-[#eef7f2]">Monthly Bill & Due Date</h2>
         </div>
         <div className="flex items-center gap-2">
           {onClearForm ? (
@@ -70,6 +81,22 @@ export function BillForm({
             {selectedTenantBills?.length ?? 0} saved
           </span>
         </div>
+      </div>
+
+      {/* Reminder Banner */}
+      <div
+        className={`mb-4 flex items-center justify-between gap-3 rounded-lg border p-3 text-sm ${reminder.color}`}
+      >
+        <div className="flex items-center gap-2 font-bold">
+          <Clock size={16} />
+          <span>
+            Reminder: Rent collection for {selectedTenant?.name || "Kiraydar"} is set for the{" "}
+            <strong>{selectedTenant?.dueDay || dueDay}th</strong> of every month.
+          </span>
+        </div>
+        <span className="whitespace-nowrap rounded-md border border-current/20 px-2 py-0.5 text-xs font-bold uppercase tracking-wide">
+          {reminder.label}
+        </span>
       </div>
 
       {saveFeedback ? (
@@ -116,6 +143,39 @@ export function BillForm({
         </label>
 
         <label className={labelClass}>
+          Rent Due Day (1 - 31 of month)
+          <div className="relative flex items-center">
+            <input
+              className={inputClass}
+              inputMode="numeric"
+              max="31"
+              min="1"
+              placeholder="5"
+              type="number"
+              value={selectedTenant?.dueDay ?? dueDay}
+              onChange={(event) => {
+                const val = Number(event.target.value);
+                if (onDueDayChange) onDueDayChange(val);
+                if (onTenantChange) onTenantChange({ dueDay: val });
+              }}
+            />
+            <span className="absolute right-3 pointer-events-none text-xs font-bold text-[#66736c] dark:text-[#b7c8bf]">
+              th of month
+            </span>
+          </div>
+        </label>
+
+        <label className={labelClass}>
+          Payment Reminder / Due Date
+          <input
+            className={inputClass}
+            type="date"
+            value={dueDate}
+            onChange={(event) => onDueDateChange(event.target.value)}
+          />
+        </label>
+
+        <label className={labelClass}>
           Home rent (₹)
           <input
             className={inputClass}
@@ -156,80 +216,130 @@ export function BillForm({
             </span>
           ) : null}
         </label>
-
-        <label className={`${labelClass} col-span-2 max-[780px]:col-span-1`}>
-          <div className="flex items-center justify-between">
-            <span>Balance / Previous Dues (₹)</span>
-            {balanceNum > 0 ? (
-              <button
-                className="cursor-pointer text-xs font-bold text-[#b7472a] hover:underline dark:text-[#ff9f87]"
-                onClick={onClearBalance}
-                type="button"
-              >
-                Clear to ₹0
-              </button>
-            ) : null}
-          </div>
-          <div className="relative flex items-center">
-            <input
-              className={`${inputClass} pr-[85px] ${
-                balanceNum > 0
-                  ? "border-[#b67518] font-bold text-[#b67518] dark:border-[#f0c36d] dark:text-[#f0c36d]"
-                  : ""
-              }`}
-              inputMode="numeric"
-              placeholder="0"
-              value={balance}
-              onChange={(event) =>
-                onBalanceChange ? onBalanceChange(event.target.value) : null
-              }
-            />
-            {balanceNum > 0 ? (
-              <button
-                className="absolute right-2 inline-flex h-8 items-center justify-center gap-1 rounded bg-[#f6ece8] px-2.5 text-xs font-bold text-[#b7472a] transition hover:bg-[#edd8d2] dark:bg-[#3a1f18] dark:text-[#ff9f87]"
-                onClick={onClearBalance}
-                title="Click to clear balance"
-                type="button"
-              >
-                <X size={14} />
-                Clear
-              </button>
-            ) : null}
-          </div>
-        </label>
       </div>
 
+      {/* Bill Calculation Cards */}
       <div className="my-[18px] grid grid-cols-3 gap-3 max-[1120px]:grid-cols-1">
-        <div className="grid min-h-28 min-w-0 gap-1.5 rounded-lg border border-[#d8e5ef] bg-[#f6f9fb] p-3.5 dark:border-[#365044] dark:bg-[#121b17]">
-          <span className="text-[13px] text-[#66736c] dark:text-[#b7c8bf]">Used Units</span>
-          <strong className="break-words text-[28px] leading-none text-[#2f5f9f] dark:text-[#8fb9ee] max-[470px]:text-[22px]">
+        <div className="grid min-h-24 min-w-0 gap-1 rounded-lg border border-[#d8e5ef] bg-[#f6f9fb] p-3 dark:border-[#365044] dark:bg-[#121b17]">
+          <span className="text-[12px] font-bold text-[#66736c] dark:text-[#b7c8bf]">Used Units</span>
+          <strong className="break-words text-[24px] leading-tight text-[#2f5f9f] dark:text-[#8fb9ee]">
             {usedUnit}
           </strong>
-          <small className="text-[13px] text-[#66736c] dark:text-[#b7c8bf]">
+          <small className="text-[11px] text-[#66736c] dark:text-[#b7c8bf]">
             {hasCurrentUnit ? currentUnitValue : "-"} - {previousUnit}
           </small>
         </div>
-        <div className="grid min-h-28 min-w-0 gap-1.5 rounded-lg border border-[#d8e5ef] bg-[#f6f9fb] p-3.5 dark:border-[#365044] dark:bg-[#121b17]">
-          <span className="text-[13px] text-[#66736c] dark:text-[#b7c8bf]">Electricity</span>
-          <strong className="break-words text-[28px] leading-none text-[#2f5f9f] dark:text-[#8fb9ee] max-[470px]:text-[22px]">
+        <div className="grid min-h-24 min-w-0 gap-1 rounded-lg border border-[#d8e5ef] bg-[#f6f9fb] p-3 dark:border-[#365044] dark:bg-[#121b17]">
+          <span className="text-[12px] font-bold text-[#66736c] dark:text-[#b7c8bf]">Electricity</span>
+          <strong className="break-words text-[24px] leading-tight text-[#2f5f9f] dark:text-[#8fb9ee]">
             {rupees(electricityAmount)}
           </strong>
-          <small className="text-[13px] text-[#66736c] dark:text-[#b7c8bf]">
+          <small className="text-[11px] text-[#66736c] dark:text-[#b7c8bf]">
             {usedUnit} units × ₹{UNIT_RATE}
           </small>
         </div>
-        <div className="grid min-h-28 min-w-0 gap-1.5 rounded-lg border border-[#10211c] bg-[#10211c] p-3.5">
-          <span className="text-[13px] text-[#cbd9d2]">Total Amount</span>
-          <strong className="break-words text-[28px] leading-none text-white max-[470px]:text-[22px]">
+        <div className="grid min-h-24 min-w-0 gap-1 rounded-lg border border-[#10211c] bg-[#10211c] p-3 text-white">
+          <span className="text-[12px] font-bold text-[#cbd9d2]">Total Bill Amount</span>
+          <strong className="break-words text-[24px] leading-tight text-white">
             {rupees(totalAmount)}
           </strong>
-          <small className="text-[13px] text-[#cbd9d2]">
+          <small className="text-[11px] text-[#cbd9d2]">
             Rent ₹{baseRent} + Bijli ₹{electricityAmount}
-            {balanceNum > 0 ? ` + Balance ₹${balanceNum}` : ""}
           </small>
         </div>
       </div>
 
+      {/* Physical Payment & Remaining Balance Section */}
+      <div className="mb-4 rounded-lg border border-[#e2e8e5] bg-[#f8faf9] p-4 dark:border-[#365044] dark:bg-[#121b17]">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="flex items-center gap-1.5 text-sm font-bold text-[#17211c] dark:text-[#eef7f2]">
+            <Coins size={16} className="text-[#16724f] dark:text-[#8fd8b7]" />
+            <span>Payment Received & Balance Due</span>
+          </div>
+          <div className="flex items-center gap-1.5">
+            <button
+              className="cursor-pointer rounded bg-[#eaf5ef] px-2 py-1 text-xs font-bold text-[#0f5e3f] transition hover:bg-[#d8edd0] dark:bg-[#21382f] dark:text-[#8fd8b7]"
+              onClick={() => (onQuickSetPaid ? onQuickSetPaid("full") : null)}
+              type="button"
+            >
+              ✓ Full Paid (₹{totalAmount})
+            </button>
+            <button
+              className="cursor-pointer rounded bg-[#fff2ee] px-2 py-1 text-xs font-bold text-[#b7472a] transition hover:bg-[#fbdcd5] dark:bg-[#321712] dark:text-[#ff9f87]"
+              onClick={() => (onQuickSetPaid ? onQuickSetPaid("unpaid") : null)}
+              type="button"
+            >
+              ₹0 (Unpaid)
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-2 gap-3.5 max-[780px]:grid-cols-1">
+          <label className={labelClass}>
+            <span>Amount Paid Physically (₹)</span>
+            <input
+              className={`${inputClass} font-bold text-[#0f5e3f] dark:text-[#8fd8b7]`}
+              inputMode="numeric"
+              placeholder="e.g. 2000"
+              value={paidAmount}
+              onChange={(event) =>
+                onPaidAmountChange ? onPaidAmountChange(event.target.value) : null
+              }
+            />
+            <span className="text-[11px] font-normal text-[#66736c] dark:text-[#b7c8bf]">
+              How much tenant physically paid you in cash/online
+            </span>
+          </label>
+
+          <label className={labelClass}>
+            <div className="flex items-center justify-between">
+              <span>Remaining Balance / Dues (₹)</span>
+              {balanceNum > 0 ? (
+                <button
+                  className="cursor-pointer text-xs font-bold text-[#b7472a] hover:underline dark:text-[#ff9f87]"
+                  onClick={onClearBalance}
+                  type="button"
+                >
+                  Clear to ₹0
+                </button>
+              ) : null}
+            </div>
+            <div className="relative flex items-center">
+              <input
+                className={`${inputClass} pr-[75px] ${
+                  balanceNum > 0
+                    ? "border-[#b7472a] font-bold text-[#b7472a] dark:border-[#f2a899] dark:text-[#ff9f87]"
+                    : "font-bold text-[#16724f] dark:text-[#8fd8b7]"
+                }`}
+                inputMode="numeric"
+                placeholder="0"
+                value={balance}
+                onChange={(event) =>
+                  onBalanceChange ? onBalanceChange(event.target.value) : null
+                }
+              />
+              {balanceNum > 0 ? (
+                <button
+                  className="absolute right-2 inline-flex h-8 items-center justify-center gap-1 rounded bg-[#f6ece8] px-2.5 text-xs font-bold text-[#b7472a] transition hover:bg-[#edd8d2] dark:bg-[#3a1f18] dark:text-[#ff9f87]"
+                  onClick={onClearBalance}
+                  title="Click to clear balance"
+                  type="button"
+                >
+                  <X size={14} />
+                  Clear
+                </button>
+              ) : null}
+            </div>
+            <span className="text-[11px] font-normal text-[#66736c] dark:text-[#b7c8bf]">
+              {balanceNum === 0
+                ? "✓ No remaining balance (Fully Paid)"
+                : `₹${balanceNum} remaining to be collected`}
+            </span>
+          </label>
+        </div>
+      </div>
+
+      {/* Status Details Bar */}
       <div className="mb-[18px] grid grid-cols-4 gap-2.5 rounded-lg border border-[#dce4dd] bg-[#fbfcfb] p-3 dark:border-[#365044] dark:bg-[#121b17] max-[960px]:grid-cols-2 max-[500px]:grid-cols-1">
         <div className="grid gap-1">
           <span className="text-xs font-bold uppercase text-[#66736c] dark:text-[#b7c8bf]">
@@ -241,10 +351,10 @@ export function BillForm({
         </div>
         <div className="grid gap-1">
           <span className="text-xs font-bold uppercase text-[#66736c] dark:text-[#b7c8bf]">
-            Saved records
+            Rent Due Day
           </span>
-          <strong className="text-lg text-[#17211c] dark:text-[#eef7f2]">
-            {selectedTenantBills?.length ?? 0}
+          <strong className="text-lg text-[#16724f] dark:text-[#8fd8b7]">
+            {selectedTenant?.dueDay || dueDay}th of month
           </strong>
         </div>
         <div className="grid gap-1">
@@ -264,7 +374,7 @@ export function BillForm({
         <div className="grid gap-1">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold uppercase text-[#66736c] dark:text-[#b7c8bf]">
-              Pending Bills
+              Total Pending Dues
             </span>
             {tenantPendingBalance > 0 && onClearPendingDues ? (
               <button

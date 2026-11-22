@@ -1,5 +1,5 @@
-import { UserPlus, UserRound } from "lucide-react";
-import { rupees } from "../lib/rent";
+import { Calendar, UserPlus, UserRound } from "lucide-react";
+import { getTenantReminder, rupees } from "../lib/rent";
 
 export function TenantList({
   onAddTenant,
@@ -28,10 +28,11 @@ export function TenantList({
         {tenants.map((tenant) => {
           const due = tenantDuesMap[tenant.id] || 0;
           const isSelected = tenant.id === selectedTenantId;
+          const reminder = getTenantReminder(tenant, due);
 
           return (
             <button
-              className={`flex min-h-[52px] cursor-pointer items-center justify-between gap-2 rounded-lg border px-3.5 text-left text-[#17211c] transition hover:-translate-y-px hover:border-[#16724f] dark:bg-[#101713] dark:text-[#eef7f2] dark:hover:border-[#8fd8b7] ${
+              className={`flex min-h-[58px] cursor-pointer items-center justify-between gap-2 rounded-lg border px-3.5 text-left text-[#17211c] transition hover:-translate-y-px hover:border-[#16724f] dark:bg-[#101713] dark:text-[#eef7f2] dark:hover:border-[#8fd8b7] ${
                 isSelected
                   ? "border-[#16724f] bg-[linear-gradient(135deg,#eaf5ef,#f6fbf8)] font-bold text-[#0f5e3f] dark:border-[#8fd8b7] dark:bg-[linear-gradient(135deg,#163126,#101713)] dark:text-[#8fd8b7]"
                   : "border-[#dce4dd] bg-white dark:border-[#365044]"
@@ -40,12 +41,18 @@ export function TenantList({
               onClick={() => onSelectTenant(tenant.id)}
               type="button"
             >
-              <span className="overflow-hidden text-ellipsis whitespace-nowrap">
-                {tenant.name}
-              </span>
-              <div className="flex shrink-0 items-center gap-1.5">
+              <div className="flex min-w-0 flex-col">
+                <span className="overflow-hidden text-ellipsis whitespace-nowrap">
+                  {tenant.name}
+                </span>
+                <span className="flex items-center gap-1 text-[11px] text-[#66736c] dark:text-[#b7c8bf]">
+                  <Calendar size={11} />
+                  Due {tenant.dueDay || 5}th
+                </span>
+              </div>
+              <div className="flex shrink-0 flex-col items-end gap-1">
                 {due > 0 ? (
-                  <span className="rounded bg-[#fff6e7] px-1.5 py-0.5 text-[11px] font-bold text-[#b67518] dark:bg-[#3a2b12] dark:text-[#f0c36d]">
+                  <span className="rounded bg-[#fff2ee] px-1.5 py-0.5 text-[11px] font-bold text-[#b7472a] dark:bg-[#321712] dark:text-[#ff9f87]">
                     Due {rupees(due)}
                   </span>
                 ) : (
@@ -53,6 +60,15 @@ export function TenantList({
                     {rupees(tenant.baseRent)}
                   </small>
                 )}
+                {reminder.status === "today" ? (
+                  <span className="rounded bg-[#eaf5ef] px-1.5 py-0.5 text-[10px] font-bold text-[#0f5e3f] dark:bg-[#1b3327] dark:text-[#8fd8b7]">
+                    🔔 Due Today
+                  </span>
+                ) : reminder.status === "overdue" && due > 0 ? (
+                  <span className="rounded bg-[#fff2ee] px-1.5 py-0.5 text-[10px] font-bold text-[#b7472a] dark:bg-[#321712] dark:text-[#ff9f87]">
+                    ⚠️ Overdue
+                  </span>
+                ) : null}
               </div>
             </button>
           );

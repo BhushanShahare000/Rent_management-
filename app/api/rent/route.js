@@ -2,13 +2,17 @@ import { NextResponse } from "next/server";
 import { getDb } from "../../lib/db";
 import { defaultTenants } from "../../lib/rent";
 
+export const dynamic = "force-dynamic";
+export const revalidate = 0;
+
 function tenantFromRow(row) {
   return {
     id: Number(row.id),
     name: row.name,
     phone: row.phone ?? "",
     baseRent: Number(row.base_rent ?? 2200),
-    previousUnit: Number(row.previous_unit ?? 0)
+    previousUnit: Number(row.previous_unit ?? 0),
+    dueDay: Number(row.due_day ?? 5)
   };
 }
 
@@ -25,6 +29,8 @@ function billFromRow(row) {
     electricityAmount: Number(row.electricity_amount),
     baseRent: Number(row.base_rent),
     balance: Number(row.balance || 0),
+    paidAmount: Number(row.paid_amount || 0),
+    dueDate: row.due_date ? String(row.due_date) : "",
     totalAmount: Number(row.total_amount),
     paid: Boolean(row.paid),
     createdAt:
@@ -34,9 +40,53 @@ function billFromRow(row) {
   };
 }
 
+async function ensureSchema(sql) {
+  try {
+    await sql`
+      CREATE TABLE IF NOT EXISTS tenants (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        phone VARCHAR(50) DEFAULT '',
+        base_rent NUMERIC(10, 2) DEFAULT 2200,
+        previous_unit INT DEFAULT 0,
+        due_day INT DEFAULT 5,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )
+    `;
+    await sql`ALTER TABLE tenants ADD COLUMN IF NOT EXISTS due_day INT DEFAULT 5`;
+
+    await sql`
+      CREATE TABLE IF NOT EXISTS bills (
+        id SERIAL PRIMARY KEY,
+        tenant_id INT NOT NULL,
+        tenant_name VARCHAR(255) NOT NULL,
+        month VARCHAR(20) NOT NULL,
+        previous_unit INT NOT NULL,
+        current_unit INT NOT NULL,
+        used_unit INT NOT NULL,
+        unit_rate NUMERIC(10, 2) NOT NULL,
+        electricity_amount NUMERIC(10, 2) NOT NULL,
+        base_rent NUMERIC(10, 2) NOT NULL,
+        balance NUMERIC(10, 2) DEFAULT 0,
+        paid_amount NUMERIC(10, 2) DEFAULT 0,
+        due_date VARCHAR(50) DEFAULT '',
+        total_amount NUMERIC(10, 2) NOT NULL,
+        paid BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      )
+    `;
+    await sql`ALTER TABLE bills ADD COLUMN IF NOT EXISTS balance NUMERIC(10, 2) DEFAULT 0`;
+    await sql`ALTER TABLE bills ADD COLUMN IF NOT EXISTS paid_amount NUMERIC(10, 2) DEFAULT 0`;
+    await sql`ALTER TABLE bills ADD COLUMN IF NOT EXISTS due_date VARCHAR(50) DEFAULT ''`;
+  } catch (err) {
+    console.warn("Schema ensure warning:", err.message);
+  }
+}
+
 export async function GET() {
   try {
     const sql = getDb();
+    await ensureSchema(sql);
 
     const [tenantRows, billRows] = await Promise.all([
       sql`SELECT * FROM tenants ORDER BY id ASC`,
@@ -53,8 +103,8 @@ export async function GET() {
     // Seed default tenants if table is completely empty
     for (const t of defaultTenants) {
       await sql`
-        INSERT INTO tenants (name, phone, base_rent, previous_unit)
-        VALUES (${t.name}, ${t.phone || ""}, ${t.baseRent}, ${t.previousUnit})
+        INSERT INTO tenants (name, phone, base_rent, previous_unit, due_day)
+        VALUES (${t.name}, ${t.phone || ""}, ${t.baseRent}, ${t.previousUnit}, ${t.dueDay || 5})
       `;
     }
 
@@ -76,6 +126,7 @@ export async function GET() {
 export async function POST(request) {
   try {
     const sql = getDb();
+    await ensureSchema(sql);
     const body = await request.json();
     const { action } = body;
 
@@ -86,10 +137,11 @@ export async function POST(request) {
         const phone = tenant.phone ?? "";
         const baseRent = Number(tenant.baseRent ?? 2200);
         const previousUnit = Number(tenant.previousUnit ?? 0);
+        const dueDay = Number(tenant.dueDay ?? 5);
 
         const [row] = await sql`
-          INSERT INTO tenants (name, phone, base_rent, previous_unit)
-          VALUES (${name}, ${phone}, ${baseRent}, ${previousUnit})
+          INSERT INTO tenants (name, phone, base_rent, previous_unit, due_day)
+          VALUES (${name}, ${phone}, ${baseRent}, ${previousUnit}, ${dueDay})
           RETURNING *
         `;
         return NextResponse.json(tenantFromRow(row));
@@ -112,6 +164,10 @@ export async function POST(request) {
           changes.previousUnit !== undefined
             ? Number(changes.previousUnit)
             : existing.previous_unit;
+        const dueDay =
+          changes.dueDay !== undefined
+            ? Number(changes.dueDay)
+            : Number(existing.due_day ?? 5);
 
         const [updated] = await sql`
           UPDATE tenants
@@ -119,7 +175,8 @@ export async function POST(request) {
             name = ${name},
             phone = ${phone},
             base_rent = ${baseRent},
-            previous_unit = ${previousUnit}
+            previous_unit = ${previousUnit},
+            due_day = ${dueDay}
           WHERE id = ${id}
           RETURNING *
         `;
@@ -128,6 +185,7 @@ export async function POST(request) {
 
       case "deleteTenant": {
         const id = Number(body.tenantId);
+        await sql`DELETE FROM bills WHERE tenant_id = ${id}`;
         await sql`DELETE FROM tenants WHERE id = ${id}`;
         return NextResponse.json({ success: true });
       }
@@ -144,6 +202,8 @@ export async function POST(request) {
         const electricityAmount = Number(bill.electricityAmount || 0);
         const baseRent = Number(bill.baseRent || 2200);
         const balance = Number(bill.balance || 0);
+        const paidAmount = Number(bill.paidAmount || 0);
+        const dueDate = bill.dueDate || "";
         const totalAmount = Number(bill.totalAmount || 0);
         const paid = Boolean(bill.paid);
 
@@ -159,6 +219,8 @@ export async function POST(request) {
             electricity_amount,
             base_rent,
             balance,
+            paid_amount,
+            due_date,
             total_amount,
             paid
           )
@@ -173,6 +235,8 @@ export async function POST(request) {
             ${electricityAmount},
             ${baseRent},
             ${balance},
+            ${paidAmount},
+            ${dueDate},
             ${totalAmount},
             ${paid}
           )
@@ -181,11 +245,76 @@ export async function POST(request) {
         return NextResponse.json(billFromRow(row));
       }
 
+      case "updateBill": {
+        const billId = Number(body.billId);
+        const changes = body.changes || {};
+
+        const [existing] = await sql`SELECT * FROM bills WHERE id = ${billId}`;
+        if (!existing) {
+          return NextResponse.json({ error: "Bill not found." }, { status: 404 });
+        }
+
+        const previousUnit =
+          changes.previousUnit !== undefined
+            ? Number(changes.previousUnit)
+            : existing.previous_unit;
+        const currentUnit =
+          changes.currentUnit !== undefined
+            ? Number(changes.currentUnit)
+            : existing.current_unit;
+        const usedUnit = Math.max(currentUnit - previousUnit, 0);
+        const unitRate =
+          changes.unitRate !== undefined
+            ? Number(changes.unitRate)
+            : existing.unit_rate;
+        const electricityAmount = usedUnit * unitRate;
+        const baseRent =
+          changes.baseRent !== undefined
+            ? Number(changes.baseRent)
+            : existing.base_rent;
+        const totalAmount = baseRent + electricityAmount;
+        const paidAmount =
+          changes.paidAmount !== undefined
+            ? Number(changes.paidAmount)
+            : Number(existing.paid_amount || 0);
+        const balance =
+          changes.balance !== undefined
+            ? Number(changes.balance)
+            : Math.max(totalAmount - paidAmount, 0);
+        const paid =
+          changes.paid !== undefined
+            ? Boolean(changes.paid)
+            : balance <= 0;
+        const dueDate =
+          changes.dueDate !== undefined
+            ? String(changes.dueDate)
+            : String(existing.due_date || "");
+
+        const [updated] = await sql`
+          UPDATE bills
+          SET
+            previous_unit = ${previousUnit},
+            current_unit = ${currentUnit},
+            used_unit = ${usedUnit},
+            unit_rate = ${unitRate},
+            electricity_amount = ${electricityAmount},
+            base_rent = ${baseRent},
+            total_amount = ${totalAmount},
+            paid_amount = ${paidAmount},
+            balance = ${balance},
+            paid = ${paid},
+            due_date = ${dueDate}
+          WHERE id = ${billId}
+          RETURNING *
+        `;
+        return NextResponse.json(billFromRow(updated));
+      }
+
       case "markAllPaidForTenant": {
         const tenantId = Number(body.tenantId);
         const updatedRows = await sql`
           UPDATE bills
-          SET paid = true
+          SET paid = true, balance = 0, paid_amount = total_amount
           WHERE tenant_id = ${tenantId} AND paid = false
           RETURNING *
         `;
@@ -193,12 +322,16 @@ export async function POST(request) {
       }
 
       case "updateBillPaid": {
-        const billId = body.billId;
+        const billId = Number(body.billId);
         const paid = Boolean(body.paid);
+
+        const [existing] = await sql`SELECT * FROM bills WHERE id = ${billId}`;
+        const paidAmount = paid ? (existing ? existing.total_amount : 0) : 0;
+        const balance = paid ? 0 : (existing ? existing.total_amount : 0);
 
         const [updated] = await sql`
           UPDATE bills
-          SET paid = ${paid}
+          SET paid = ${paid}, paid_amount = ${paidAmount}, balance = ${balance}
           WHERE id = ${billId}
           RETURNING *
         `;
@@ -209,12 +342,13 @@ export async function POST(request) {
       }
 
       case "deleteBill": {
-        const billId = body.billId;
+        const billId = Number(body.billId);
         await sql`DELETE FROM bills WHERE id = ${billId}`;
         return NextResponse.json({ success: true });
       }
 
-      case "deleteBillsForTenant": {
+      case "deleteBillsForTenant":
+      case "clearTenantBills": {
         const tenantId = Number(body.tenantId);
         await sql`DELETE FROM bills WHERE tenant_id = ${tenantId}`;
         return NextResponse.json({ success: true });

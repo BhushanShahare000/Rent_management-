@@ -107,3 +107,16 @@ export async function markAllPaidForTenant(tenantId) {
   }
   return res.json();
 }
+
+export async function updateBillRow(billId, changes) {
+  const res = await fetch("/api/rent", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "updateBill", billId, changes })
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || "Failed to update bill");
+  }
+  return res.json();
+}
