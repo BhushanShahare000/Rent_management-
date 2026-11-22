@@ -24,6 +24,7 @@ function billFromRow(row) {
     unitRate: Number(row.unit_rate),
     electricityAmount: Number(row.electricity_amount),
     baseRent: Number(row.base_rent),
+    balance: Number(row.balance || 0),
     totalAmount: Number(row.total_amount),
     paid: Boolean(row.paid),
     createdAt:
@@ -142,6 +143,7 @@ export async function POST(request) {
         const unitRate = Number(bill.unitRate || 10);
         const electricityAmount = Number(bill.electricityAmount || 0);
         const baseRent = Number(bill.baseRent || 2200);
+        const balance = Number(bill.balance || 0);
         const totalAmount = Number(bill.totalAmount || 0);
         const paid = Boolean(bill.paid);
 
@@ -156,6 +158,7 @@ export async function POST(request) {
             unit_rate,
             electricity_amount,
             base_rent,
+            balance,
             total_amount,
             paid
           )
@@ -169,12 +172,24 @@ export async function POST(request) {
             ${unitRate},
             ${electricityAmount},
             ${baseRent},
+            ${balance},
             ${totalAmount},
             ${paid}
           )
           RETURNING *
         `;
         return NextResponse.json(billFromRow(row));
+      }
+
+      case "markAllPaidForTenant": {
+        const tenantId = Number(body.tenantId);
+        const updatedRows = await sql`
+          UPDATE bills
+          SET paid = true
+          WHERE tenant_id = ${tenantId} AND paid = false
+          RETURNING *
+        `;
+        return NextResponse.json(updatedRows.map(billFromRow));
       }
 
       case "updateBillPaid": {

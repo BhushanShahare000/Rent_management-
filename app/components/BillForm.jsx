@@ -5,7 +5,8 @@ import {
   MessageCircle,
   RotateCcw,
   Save,
-  Trash2
+  Trash2,
+  X
 } from "lucide-react";
 import { UNIT_RATE, rupees } from "../lib/rent";
 
@@ -14,6 +15,7 @@ const inputClass =
 const labelClass = "grid gap-[7px] text-[13px] font-bold text-[#66736c] dark:text-[#b7c8bf]";
 
 export function BillForm({
+  balance = 0,
   baseRent,
   currentUnit,
   currentUnitValue,
@@ -21,8 +23,11 @@ export function BillForm({
   hasCurrentUnit,
   isSaving = false,
   month,
+  onBalanceChange,
   onBaseRentChange,
+  onClearBalance,
   onClearForm,
+  onClearPendingDues,
   onCurrentUnitChange,
   onDeleteTenant,
   onMonthChange,
@@ -33,11 +38,13 @@ export function BillForm({
   saveFeedback = "",
   selectedTenant,
   selectedTenantBills = [],
+  tenantPendingBalance = 0,
   totalAmount,
   usedUnit,
   whatsappUrl
 }) {
   const isUnitDecreasing = hasCurrentUnit && currentUnitValue < previousUnit;
+  const balanceNum = Number(balance) || 0;
 
   return (
     <section className="rounded-lg border border-[#dce4dd] bg-white p-5 shadow-[0_18px_40px_rgba(28,42,35,0.09)] dark:border-[#2f4439] dark:bg-[#18231e] dark:shadow-none max-[780px]:p-4 print:hidden">
@@ -83,6 +90,7 @@ export function BillForm({
             }
           />
         </label>
+
         <label className={labelClass}>
           WhatsApp number
           <input
@@ -95,6 +103,7 @@ export function BillForm({
             }
           />
         </label>
+
         <label className={labelClass}>
           Month
           <input
@@ -104,6 +113,7 @@ export function BillForm({
             onChange={(event) => onMonthChange(event.target.value)}
           />
         </label>
+
         <label className={labelClass}>
           Home rent (₹)
           <input
@@ -114,6 +124,7 @@ export function BillForm({
             onChange={(event) => onBaseRentChange(event.target.value)}
           />
         </label>
+
         <label className={labelClass}>
           Previous unit
           <input
@@ -124,6 +135,7 @@ export function BillForm({
             onChange={(event) => onPreviousUnitChange(event.target.value)}
           />
         </label>
+
         <label className={labelClass}>
           Current unit
           <input
@@ -142,6 +154,47 @@ export function BillForm({
               Warning: Current unit is lower than previous ({previousUnit}).
             </span>
           ) : null}
+        </label>
+
+        <label className={`${labelClass} col-span-2 max-[780px]:col-span-1`}>
+          <div className="flex items-center justify-between">
+            <span>Balance / Previous Dues (₹)</span>
+            {balanceNum > 0 ? (
+              <button
+                className="cursor-pointer text-xs font-bold text-[#b7472a] hover:underline dark:text-[#ff9f87]"
+                onClick={onClearBalance}
+                type="button"
+              >
+                Clear to ₹0
+              </button>
+            ) : null}
+          </div>
+          <div className="relative flex items-center">
+            <input
+              className={`${inputClass} pr-[85px] ${
+                balanceNum > 0
+                  ? "border-[#b67518] font-bold text-[#b67518] dark:border-[#f0c36d] dark:text-[#f0c36d]"
+                  : ""
+              }`}
+              inputMode="numeric"
+              placeholder="0"
+              value={balance}
+              onChange={(event) =>
+                onBalanceChange ? onBalanceChange(event.target.value) : null
+              }
+            />
+            {balanceNum > 0 ? (
+              <button
+                className="absolute right-2 inline-flex h-8 items-center justify-center gap-1 rounded bg-[#f6ece8] px-2.5 text-xs font-bold text-[#b7472a] transition hover:bg-[#edd8d2] dark:bg-[#3a1f18] dark:text-[#ff9f87]"
+                onClick={onClearBalance}
+                title="Click to clear balance"
+                type="button"
+              >
+                <X size={14} />
+                Clear
+              </button>
+            ) : null}
+          </div>
         </label>
       </div>
 
@@ -171,11 +224,12 @@ export function BillForm({
           </strong>
           <small className="text-[13px] text-[#cbd9d2]">
             Rent ₹{baseRent} + Bijli ₹{electricityAmount}
+            {balanceNum > 0 ? ` + Balance ₹${balanceNum}` : ""}
           </small>
         </div>
       </div>
 
-      <div className="mb-[18px] grid grid-cols-3 gap-2.5 rounded-lg border border-[#dce4dd] bg-[#fbfcfb] p-3 dark:border-[#365044] dark:bg-[#121b17] max-[780px]:grid-cols-1">
+      <div className="mb-[18px] grid grid-cols-4 gap-2.5 rounded-lg border border-[#dce4dd] bg-[#fbfcfb] p-3 dark:border-[#365044] dark:bg-[#121b17] max-[960px]:grid-cols-2 max-[500px]:grid-cols-1">
         <div className="grid gap-1">
           <span className="text-xs font-bold uppercase text-[#66736c] dark:text-[#b7c8bf]">
             Last saved unit
@@ -193,8 +247,34 @@ export function BillForm({
           </strong>
         </div>
         <div className="grid gap-1">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold uppercase text-[#66736c] dark:text-[#b7c8bf]">
+              Pending Due
+            </span>
+            {tenantPendingBalance > 0 && onClearPendingDues ? (
+              <button
+                className="cursor-pointer text-[11px] font-bold text-[#16724f] hover:underline dark:text-[#8fd8b7]"
+                onClick={onClearPendingDues}
+                title="Mark all pending bills paid"
+                type="button"
+              >
+                Clear All
+              </button>
+            ) : null}
+          </div>
+          <strong
+            className={`text-lg ${
+              tenantPendingBalance > 0
+                ? "text-[#b67518] dark:text-[#f0c36d]"
+                : "text-[#16724f] dark:text-[#8fd8b7]"
+            }`}
+          >
+            {tenantPendingBalance > 0 ? rupees(tenantPendingBalance) : "₹0 (Clear)"}
+          </strong>
+        </div>
+        <div className="grid gap-1">
           <span className="text-xs font-bold uppercase text-[#66736c] dark:text-[#b7c8bf]">
-            Latest bill amount
+            Latest bill
           </span>
           <strong className="text-lg text-[#17211c] dark:text-[#eef7f2]">
             {selectedTenantBills?.[0] ? rupees(selectedTenantBills[0].totalAmount) : rupees(0)}

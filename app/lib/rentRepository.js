@@ -94,3 +94,16 @@ export async function deleteBillsForTenant(tenantId) {
     throw new Error(errorData.error || "Failed to delete bills for tenant");
   }
 }
+
+export async function markAllPaidForTenant(tenantId) {
+  const res = await fetch("/api/rent", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ action: "markAllPaidForTenant", tenantId })
+  });
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    throw new Error(errorData.error || "Failed to mark all bills paid");
+  }
+  return res.json();
+}

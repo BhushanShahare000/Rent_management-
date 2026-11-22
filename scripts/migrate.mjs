@@ -50,6 +50,7 @@ async function migrate() {
       unit_rate INTEGER NOT NULL,
       electricity_amount INTEGER NOT NULL,
       base_rent INTEGER NOT NULL,
+      balance INTEGER NOT NULL DEFAULT 0,
       total_amount INTEGER NOT NULL,
       paid BOOLEAN NOT NULL DEFAULT FALSE,
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
