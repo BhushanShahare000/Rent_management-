@@ -28,13 +28,7 @@ import {
   numberValue,
   sortBills
 } from "./lib/rent";
-import {
-  getSupabaseSession,
-  isSupabaseConfigured,
-  requiresSupabaseConfig,
-  signInWithPassword,
-  signOut
-} from "./lib/supabase";
+import { getAppConfig, getStoredSession, signIn, signOut } from "./lib/authClient";
 
 const THEME_KEY = "kiraydar-theme";
 
@@ -52,9 +46,9 @@ export default function Home() {
   const [openTenantRecordId, setOpenTenantRecordId] = useState(null);
   const [theme, setTheme] = useState("light");
   const [hasLoadedTheme, setHasLoadedTheme] = useState(false);
-  const [dataSource, setDataSource] = useState(isSupabaseConfigured ? "supabase" : "local");
+  const [isDbConfigured, setIsDbConfigured] = useState(true);
   const [session, setSession] = useState(null);
-  const [hasCheckedSession, setHasCheckedSession] = useState(!isSupabaseConfigured);
+  const [hasCheckedSession, setHasCheckedSession] = useState(false);
   const [loginEmail, setLoginEmail] = useState("");
   const [loginPassword, setLoginPassword] = useState("");
   const [loginError, setLoginError] = useState("");
@@ -149,14 +143,16 @@ export default function Home() {
     }
     setHasLoadedTheme(true);
 
-    if (!isSupabaseConfigured) return;
-
-    getSupabaseSession()
-      .then((savedSession) => {
-        setSession(savedSession);
+    getAppConfig()
+      .then((cfg) => {
+        setIsDbConfigured(cfg.isDatabaseConfigured);
+        if (cfg.isDatabaseConfigured) {
+          const savedSession = getStoredSession();
+          setSession(savedSession);
+        }
       })
       .catch((error) => {
-        setLoginError(error.message);
+        console.error("Failed to load app config:", error);
       })
       .finally(() => {
         setHasCheckedSession(true);
@@ -164,27 +160,27 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
-    if (isSupabaseConfigured && !session) {
+    if (isDbConfigured && !session) {
       setHasLoadedStorage(false);
       return;
     }
 
     async function loadData() {
-      if (isSupabaseConfigured) {
+      if (isDbConfigured) {
         try {
           const saved = await loadRentData();
-          if (saved.tenants.length) {
+          if (saved.tenants?.length) {
             setTenants(saved.tenants);
             setSelectedTenantId(saved.tenants[0].id);
           }
-          setBills(saved.bills);
-          setDataSource("supabase");
+          if (saved.bills) {
+            setBills(saved.bills);
+          }
           setHasLoadedStorage(true);
           return;
         } catch (error) {
-          console.error("Supabase load failed. Falling back to localStorage.", error);
-          window.alert(`Supabase load failed. Using local browser data for now.\n\n${error.message}`);
-          setDataSource("local");
+          console.error("Database load failed. Falling back to localStorage.", error);
+          window.alert(`Database load failed:\n\n${error.message}`);
         }
       }
 
@@ -196,7 +192,6 @@ export default function Home() {
 
       try {
         const saved = JSON.parse(raw);
-
         if (saved.tenants?.length) {
           setTenants(saved.tenants);
           setSelectedTenantId(saved.tenants[0].id);
@@ -210,7 +205,7 @@ export default function Home() {
     }
 
     loadData();
-  }, [session]);
+  }, [isDbConfigured, session]);
 
   useEffect(() => {
     if (!hasLoadedTheme) return;
@@ -219,9 +214,9 @@ export default function Home() {
   }, [hasLoadedTheme, theme]);
 
   useEffect(() => {
-    if (!hasLoadedStorage || dataSource !== "local") return;
+    if (!hasLoadedStorage || isDbConfigured) return;
     window.localStorage.setItem(STORAGE_KEY, JSON.stringify({ tenants, bills }));
-  }, [bills, dataSource, hasLoadedStorage, tenants]);
+  }, [bills, isDbConfigured, hasLoadedStorage, tenants]);
 
   useEffect(() => {
     setPreviousUnit(selectedTenantLatestBill?.currentUnit ?? selectedTenant.previousUnit);
@@ -243,7 +238,7 @@ export default function Home() {
       )
     );
 
-    if (dataSource !== "supabase") return;
+    if (!isDbConfigured) return;
 
     try {
       const updatedTenant = await updateTenantRow(selectedTenantId, changes);
@@ -252,7 +247,7 @@ export default function Home() {
       );
     } catch (error) {
       setTenants(previousTenants);
-      window.alert(`Could not update kiraydar in Supabase.\n\n${error.message}`);
+      window.alert(`Could not update kiraydar in database.\n\n${error.message}`);
     }
   }
 
@@ -265,25 +260,24 @@ export default function Home() {
   async function addTenant() {
     const nextId = tenants.reduce((maxId, tenant) => Math.max(maxId, tenant.id), 0) + 1;
     const tenant = {
-      id: nextId,
       name: `Kiraydar ${nextId}`,
       phone: "",
       baseRent: 2200,
       previousUnit: 0
     };
 
-    if (dataSource === "supabase") {
+    if (isDbConfigured) {
       try {
         const savedTenant = await createTenant(tenant);
         setTenants((current) => [...current, savedTenant]);
         setSelectedTenantId(savedTenant.id);
       } catch (error) {
-        window.alert(`Could not add kiraydar in Supabase.\n\n${error.message}`);
+        window.alert(`Could not add kiraydar in database.\n\n${error.message}`);
       }
       return;
     }
 
-    setTenants((current) => [...current, tenant]);
+    setTenants((current) => [...current, { ...tenant, id: nextId }]);
     setSelectedTenantId(nextId);
   }
 
@@ -301,11 +295,11 @@ export default function Home() {
 
     if (!window.confirm(confirmMessage)) return;
 
-    if (dataSource === "supabase") {
+    if (isDbConfigured) {
       try {
         await deleteTenantRow(tenant.id);
       } catch (error) {
-        window.alert(`Could not delete kiraydar in Supabase.\n\n${error.message}`);
+        window.alert(`Could not delete kiraydar in database.\n\n${error.message}`);
         return;
       }
     }
@@ -324,7 +318,6 @@ export default function Home() {
     if (!hasCurrentUnit) return;
 
     const bill = {
-      id: crypto.randomUUID(),
       tenantId: selectedTenant.id,
       tenantName: selectedTenant.name,
       month,
@@ -335,22 +328,24 @@ export default function Home() {
       electricityAmount,
       baseRent,
       totalAmount,
-      paid: false,
+      paid: false
+    };
+
+    let savedBill = {
+      ...bill,
+      id: crypto.randomUUID(),
       createdAt: new Date().toISOString()
     };
 
-    let savedBill = bill;
-
-    if (dataSource === "supabase") {
+    if (isDbConfigured) {
       try {
         savedBill = await createBill(bill);
         await updateTenantRow(selectedTenant.id, {
-          ...selectedTenant,
           baseRent,
           previousUnit: currentUnitValue
         });
       } catch (error) {
-        window.alert(`Could not save bill in Supabase.\n\n${error.message}`);
+        window.alert(`Could not save bill in database.\n\n${error.message}`);
         return;
       }
     }
@@ -370,11 +365,11 @@ export default function Home() {
   async function deleteBill(billId) {
     if (!window.confirm("Delete this saved bill?")) return;
 
-    if (dataSource === "supabase") {
+    if (isDbConfigured) {
       try {
         await deleteBillRow(billId);
       } catch (error) {
-        window.alert(`Could not delete bill in Supabase.\n\n${error.message}`);
+        window.alert(`Could not delete bill in database.\n\n${error.message}`);
         return;
       }
     }
@@ -386,14 +381,14 @@ export default function Home() {
     const targetBill = bills.find((bill) => bill.id === billId);
     if (!targetBill) return;
 
-    if (dataSource === "supabase") {
+    if (isDbConfigured) {
       try {
         const updatedBill = await updateBillPaidRow(billId, !targetBill.paid);
         setBills((current) =>
           current.map((bill) => (bill.id === billId ? updatedBill : bill))
         );
       } catch (error) {
-        window.alert(`Could not update paid status in Supabase.\n\n${error.message}`);
+        window.alert(`Could not update paid status in database.\n\n${error.message}`);
       }
       return;
     }
@@ -408,11 +403,11 @@ export default function Home() {
   async function clearTenantBills(tenant) {
     if (!window.confirm(`Delete all saved bills for ${tenant.name}?`)) return;
 
-    if (dataSource === "supabase") {
+    if (isDbConfigured) {
       try {
         await deleteBillsForTenant(tenant.id);
       } catch (error) {
-        window.alert(`Could not clear bills in Supabase.\n\n${error.message}`);
+        window.alert(`Could not clear bills in database.\n\n${error.message}`);
         return;
       }
     }
@@ -437,7 +432,7 @@ export default function Home() {
     setIsSigningIn(true);
 
     try {
-      const nextSession = await signInWithPassword(loginEmail, loginPassword);
+      const nextSession = await signIn(loginEmail, loginPassword);
       setSession(nextSession);
       setLoginPassword("");
     } catch (error) {
@@ -455,17 +450,16 @@ export default function Home() {
     setSelectedTenantId(1);
   }
 
-  if (requiresSupabaseConfig && !isSupabaseConfigured) {
+  if (!isDbConfigured && process.env.NODE_ENV === "production") {
     return (
       <main className="mx-auto flex min-h-screen w-[min(620px,calc(100%_-_32px))] items-center py-8 text-[#17211c] dark:text-[#eef7f2]">
         <section className="w-full rounded-lg border border-[#dce4dd] bg-white p-6 shadow-[0_18px_40px_rgba(28,42,35,0.09)] dark:border-[#2f4439] dark:bg-[#18231e] dark:shadow-none">
           <p className="mb-1.5 text-[13px] font-bold uppercase text-[#b7472a] dark:text-[#ff9f87]">
-            Supabase setup missing
+            Database setup missing
           </p>
-          <h1 className="m-0 text-2xl font-bold leading-tight">Login is not enabled</h1>
+          <h1 className="m-0 text-2xl font-bold leading-tight">Database is not configured</h1>
           <p className="mb-0 mt-4 text-sm font-bold leading-6 text-[#66736c] dark:text-[#b7c8bf]">
-            Add NEXT_PUBLIC_SUPABASE_URL and NEXT_PUBLIC_SUPABASE_ANON_KEY in Vercel
-            Production environment variables, then redeploy without build cache.
+            Add DATABASE_URL in Vercel Production environment variables, then redeploy without build cache.
           </p>
         </section>
       </main>
@@ -480,7 +474,7 @@ export default function Home() {
     );
   }
 
-  if (isSupabaseConfigured && !session) {
+  if (isDbConfigured && !session) {
     return (
       <LoginForm
         email={loginEmail}
@@ -500,7 +494,7 @@ export default function Home() {
     <main className="mx-auto w-[min(1420px,calc(100%_-_32px))] py-7 pb-10 max-[780px]:w-[min(100%_-_20px,1420px)] max-[780px]:pt-4 max-[470px]:w-[calc(100%_-_16px)] print:w-full print:p-0">
       <AppHeader
         isDarkTheme={theme === "dark"}
-        onSignOut={isSupabaseConfigured ? handleSignOut : null}
+        onSignOut={isDbConfigured ? handleSignOut : null}
         onToggleTheme={toggleTheme}
         tenantCount={tenants.length}
       />
@@ -532,13 +526,14 @@ export default function Home() {
           onCurrentUnitChange={setCurrentUnit}
           onDeleteTenant={() => deleteTenant(selectedTenant)}
           onMonthChange={setMonth}
-          onPreviousUnitChange={(value) => setPreviousUnit(numberValue(value))}
-          onSaveBill={saveBill}
+          onPreviousUnitChange={setPreviousUnit}
           onTenantChange={updateTenant}
+          onSaveBill={saveBill}
           previousUnit={previousUnit}
           selectedTenant={selectedTenant}
           selectedTenantBills={selectedTenantBills}
           totalAmount={totalAmount}
+          unitRate={UNIT_RATE}
           usedUnit={usedUnit}
           whatsappUrl={whatsappUrl}
         />

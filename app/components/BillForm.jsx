@@ -21,7 +21,7 @@ export function BillForm({
   onTenantChange,
   previousUnit,
   selectedTenant,
-  selectedTenantBills,
+  selectedTenantBills = [],
   totalAmount,
   usedUnit,
   whatsappUrl
@@ -34,7 +34,7 @@ export function BillForm({
           <h2 className="m-0 text-lg text-[#17211c] dark:text-[#eef7f2]">Monthly Bill</h2>
         </div>
         <span className="whitespace-nowrap rounded-full bg-[#eef4f1] px-2.5 py-[7px] text-[13px] font-bold text-[#66736c] dark:bg-[#21382f] dark:text-[#b7c8bf]">
-          {selectedTenantBills.length} saved
+          {selectedTenantBills?.length ?? 0} saved
         </span>
       </div>
 
@@ -43,8 +43,10 @@ export function BillForm({
           Kiraydar name
           <input
             className={inputClass}
-            value={selectedTenant.name}
-            onChange={(event) => onTenantChange({ name: event.target.value })}
+            value={selectedTenant?.name ?? ""}
+            onChange={(event) =>
+              onTenantChange ? onTenantChange({ name: event.target.value }) : null
+            }
           />
         </label>
         <label className={labelClass}>
@@ -53,8 +55,10 @@ export function BillForm({
             className={inputClass}
             inputMode="tel"
             placeholder="Example: 919876543210"
-            value={selectedTenant.phone}
-            onChange={(event) => onTenantChange({ phone: event.target.value })}
+            value={selectedTenant?.phone ?? ""}
+            onChange={(event) =>
+              onTenantChange ? onTenantChange({ phone: event.target.value }) : null
+            }
           />
         </label>
         <label className={labelClass}>
